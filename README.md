@@ -1,7 +1,4 @@
 
-<p align="center">
-  <img width="auto" height="64" src="img/THEfunc_logo.png">
-</p>
 # THEfunc — Tumor Heterogeneity and Evolution functions
 
 <!-- badges: start -->
