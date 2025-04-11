@@ -1,0 +1,20 @@
+Package: THEfunc
+Type: Package
+Title: Tumor Heterogeneity and Evolution functions
+Version: 0.0.5
+Author: Andrew Lynch <arlynch1001@gmail.com>
+Maintainer: Andrew Lynch <arlynch1001@gmail.com>
+Description: Assorted functions for analyzing/visualizing genomic data with a focus twoard tumor heterogeneity and evolution. The package is roughly broken in 4 parts. 
+    (1) Input - Functions for reading in genomic data from various sources.
+    (2) Calculations - Functions to deal with quantities related to THE such as allele frequencies, cancer cell fraction, multiplicity, purity, and ploidy.
+    (3) SeqPlot - A flexible suite of tools for visualizing genomic data.
+    (4) Utilities - A smorgasbord of other useful functions.
+Encoding: UTF-8
+LazyData: true
+Depends: 
+    R (>= 2.10),
+    GenomicRanges(>= 1.30)
+Imports:
+    VariantAnnotation,
+    StructuralVariantAnnotation
+RoxygenNote: 7.3.2
