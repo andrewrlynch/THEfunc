@@ -1,7 +1,7 @@
 Package: THEfunc
 Type: Package
 Title: Tumor Heterogeneity and Evolution functions
-Version: 0.0.5
+Version: 0.0.9
 Author: Andrew Lynch <arlynch1001@gmail.com>
 Maintainer: Andrew Lynch <arlynch1001@gmail.com>
 Description: Assorted functions for analyzing/visualizing genomic data with a focus twoard tumor heterogeneity and evolution. The package is roughly broken in 4 parts. 
