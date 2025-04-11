@@ -1364,12 +1364,13 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
 # SeqAnnotations
 # TODO - [X] SeqAnnotation - Ideogram
 # TODO - [ ] SeqAnnotation - Gene/Transcript
-# TODO - [ ] SeqAnnotation - Gene/Transcript
+# TODO - [ ] SeqAnnotation - Alignment
 # TODO - [ ] SeqAnnotation - Box
 # TODO - [ ] SeqAnnotation - Zoom
 # TODO - [ ] SeqAnnotation - Text
 
 # Window/Track Control
+# TODO - [ ] Convert to grid graphics (rather than single canvas)
 # TODO - [ ] Add functionality for customWindows at the Seq Track level. I.e., not all tracks have the same windows.
 # TODO - [ ] Individual track and window gap control
 
