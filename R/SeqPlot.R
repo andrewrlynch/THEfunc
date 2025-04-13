@@ -545,7 +545,7 @@ SeqArc <- function(gr1, gr2,
 #' @param lwd Line width
 #' @export
 drawArc <- function(x0, y0, x1, y1, orientation = "*", col = "black", lwd = 2) {
-  upward <- orientation %in% c("*", "up", "+", "+/+", "+/-")
+  upward <- orientation %in% c("*", "up", "+", "-/+", "-/-")
   sign <- ifelse(upward, 1, -1)
 
   # Midpoint
@@ -619,7 +619,7 @@ drawSeqArch <- function(x0, y0, x1, y1, top0, top1,
                         orientation = "*", curve = "length",
                         col = "black", lwd = 2) {
 
-  upward <- orientation %in% c("*", "up", "+", "+/+", "+/-")
+  upward <- orientation %in% c("*", "up", "+", "-/+", "-/-")
   sign <- ifelse(upward, 1, -1)
 
   span <- abs(x1 - x0)
@@ -670,6 +670,68 @@ drawSeqArch <- function(x0, y0, x1, y1, top0, top1,
 
 }
 
+
+
+### SeqRecon ----
+
+#' SeqRecon-Class
+#' @description ReCon-style rearrangement arcs, subclass of SeqArch with automatic tiering and coloring.
+#' @exportClass SeqRecon
+setClass("SeqRecon", contains = "SeqArch")
+
+#' SeqRecon
+#' @description Constructs a ReCon-style arc from paired breakpoints.
+#' @export
+SeqRecon <- function(gr1, gr2,
+                     orientation = "*", orientationCol = NULL,
+                     color = NULL, colorCol = NULL,
+                     y0 = 0, y1 = 0, t0 = 0, t1 = 0,
+                     curve = "equal") {
+
+  n <- length(gr1)
+
+  # Extract orientation from metadata if needed
+  if (!is.null(orientationCol) && orientationCol %in% names(mcols(gr1))) {
+    orientation_vals <- mcols(gr1)[[orientationCol]]
+  } else if (length(orientation) == 1) {
+    orientation_vals <- rep(orientation, n)
+  } else {
+    orientation_vals <- orientation  # already a vector of correct length
+  }
+
+  # Infer SV type
+  sv_type <- mapply(function(ori, chr1, chr2) {
+    if (chr1 != chr2) return("TRA")
+    switch(ori,
+           "+/+" = "h2hINV", "-/-" = "t2tINV",
+           "+/-" = "DEL", "-/+" = "DUP",
+           "unknown")
+  }, orientation_vals, as.character(seqnames(gr1)), as.character(seqnames(gr2)))
+
+  # Define height per type (these are Y positions in the arc track)
+  sv_height <- c(h2hINV = 0.25, t2tINV = 0.25, DEL = 0.5, DUP = 0.5, TRA = 0.75)
+  heights <- sv_height[sv_type]
+  heights[is.na(heights)] <- 0.5
+
+  # Define default colors
+  sv_color <- c(h2hINV = "#FF7800", t2tINV = "#FFB900",
+                DEL = "#0E97CF", DUP = "#E92F2F",
+                TRA = "#74B21A")
+  colors <- if (!is.null(colorCol) && colorCol %in% names(mcols(gr1))) {
+    as.character(mcols(gr1)[[colorCol]])
+  } else {
+    sv_color[sv_type]
+  }
+
+  new("SeqRecon",
+      SeqArch(gr1 = gr1, gr2 = gr2,
+              orientation = orientation_vals,
+              y0 = y0, y1 = y1,
+              t0 = t0, t1 = t1,
+              height = heights,
+              curve = curve,
+              color = colors))
+}
 
 
 
@@ -1077,7 +1139,6 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
     }
   }
 
-
   ## Process each track for standard (non-spanning) features:
   for (track_idx in seq_len(totalTracks)) {
     track <- sp@tracks[[track_idx]]
@@ -1105,7 +1166,6 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
       track_y_min <- 0
       track_y_max <- 1
     }
-
 
     this_track_bottom <- global_track_bottoms[track_idx]
     this_track_top <- global_track_tops[track_idx]
@@ -1331,6 +1391,16 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
             lwd = 1.2
           )
 
+        } else if (is(sf, "SeqRecon")) {
+          drawSeqArch(
+            x0 = x0_abs, y0 = y0_abs,
+            x1 = x1_abs, y1 = y1_abs,
+            top0 = top0_abs, top1 = top1_abs,
+            orientation = sf@orientation[i],
+            curve = sf@curve[i],
+            col = sf@color[i],
+            lwd = 1.2
+          )
         } else {
           warning("Unknown SeqLink subclass — skipping.")
         }
@@ -1352,18 +1422,23 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
 # TODO - [ ] SeqFeature - Segment
 # TODO - [ ] SeqFeature - Tile (Heatmap with ranges on X and categorical on Y.)
 # TODO - [ ] SeqFeature - Text
+# TODO - [ ] Plot 'stubs' of data that partially resides outside the plotting window.
+# TODO - [ ] Grouping of input observations (most important for line, area, and barplot. Will enable stacking.)
 
 # SeqLinks (see genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1895-9 for nice examples)
 # TODO - [X] SeqLink - Arc
 # TODO - [X] SeqLink - Arch (optional height argument for y maximum, differs from arch in that it is bounded by vertical lines and added height functionality)
-# TODO - [ ] SeqLink - ReCon (Special arch that separates types of rearrangements. Based on doi.org/10.1093/bioinformatics/btad719. Places inversions on one track and dup/del on another.
+# TODO - [/] SeqLink - ReCon (Special arch that separates types of rearrangements. Based on doi.org/10.1093/bioinformatics/btad719. Places inversions on one track and dup/del on another.
+      # Still need to add proper tier lines.
 # TODO - [ ] SeqLink - String (optional height argument for y maximum)
+# TODO - [ ] Plot 'stubs' of data whose partner is outside the plotting window.
 # TODO - [ ] SeqLink - Barbell (intended to visualize paired reads)
 # TODO - [ ] SeqLink - Band (for synteny-like connections)
 
 # SeqAnnotations
 # TODO - [X] SeqAnnotation - Ideogram
 # TODO - [ ] SeqAnnotation - Gene/Transcript
+# TODO - [ ] SeqAnnotation - Legend
 # TODO - [ ] SeqAnnotation - Alignment
 # TODO - [ ] SeqAnnotation - Box
 # TODO - [ ] SeqAnnotation - Zoom
@@ -1373,6 +1448,7 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
 # TODO - [ ] Convert to grid graphics (rather than single canvas)
 # TODO - [ ] Add functionality for customWindows at the Seq Track level. I.e., not all tracks have the same windows.
 # TODO - [ ] Individual track and window gap control
+# TODO - [ ] Fix Y axis scaling. Track currently scales to maximum Y even when maximum Y is not in provided windows.
 
 # Aesthetics
 # TODO - [ ] SeqPlot-level aesthetic control of tracks and windows that defers to track-level changes to default.
