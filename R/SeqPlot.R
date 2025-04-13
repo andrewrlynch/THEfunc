@@ -673,6 +673,8 @@ drawSeqArch <- function(x0, y0, x1, y1, top0, top1,
 
 
 ### SeqRecon ----
+### Inspired by GH: cortes-ciriano-lab/ReConPlot
+
 
 #' SeqRecon-Class
 #' @description ReCon-style rearrangement arcs, subclass of SeqArch with automatic tiering and coloring.
@@ -733,6 +735,145 @@ SeqRecon <- function(gr1, gr2,
               color = colors))
 }
 
+
+
+### SeqString ----
+### Inspired by GH: mskilab-org/gTrack and mskilab-org/gGnome
+
+#' SeqString-Class
+#' @description A smooth, signed Bezier curve between two genomic points with horizontal entry/exit
+#' @exportClass SeqString
+setClass("SeqString", contains = "SeqLink")
+
+#' SeqString
+#' @description Constructs a SeqString object from a BED-like input
+#' @param df A data.frame or DataFrame with columns chr0, x0, y0, chr1, x1, y1, orientation
+#' @export
+SeqString <- function(df,
+                      t0 = 0, t1 = 0,
+                      color = "black", colorCol = NULL,
+                      orientation = "*", orientationCol = "orientation") {
+
+  if (!all(c("chr0", "x0", "y0", "chr1", "x1", "y1") %in% names(df))) {
+    stop("Input must contain chr0, x0, y0, chr1, x1, y1 columns.")
+  }
+
+  n <- nrow(df)
+
+  # Orientation from column if available
+  if (!is.null(orientationCol) && orientationCol %in% names(df)) {
+    ori <- as.character(df[[orientationCol]])
+  } else if (length(orientation) == 1) {
+    ori <- rep(orientation, n)
+  } else {
+    ori <- orientation
+  }
+
+  # Convert to GRanges (we'll use gr1 and gr2 as placeholders)
+  gr1 <- GRanges(seqnames = df$chr0,
+                 ranges = IRanges(start = df$x0, width = 1),
+                 y0 = df$y0)
+
+  gr2 <- GRanges(seqnames = df$chr1,
+                 ranges = IRanges(start = df$x1, width = 1),
+                 y1 = df$y1)
+
+  # Colors
+  col_vals <- if (!is.null(colorCol) && colorCol %in% names(df)) {
+    as.character(df[[colorCol]])
+  } else {
+    rep(color, n)
+  }
+
+  new("SeqString", SeqLink(gr1 = gr1, gr2 = gr2,
+                           t0 = rep(t0, n), t1 = rep(t1, n),
+                           y0 = df$y0, y1 = df$y1,
+                           orientation = ori,
+                           color = col_vals))
+}
+
+
+
+#' drawSeqString
+#' @description Draws a 6-point cubic Bézier DNA string curve
+#' @export
+drawSeqString <- function(x0, y0, x1, y1, orientation = "*",
+                          col = "black", lwd = 1.5, buffer = NULL) {
+
+  dx <- abs(x1 - x0)
+  dy <- abs(y1 - y0)
+
+  # Set horizontal "stretch" buffer
+  if (is.null(buffer)) {
+    buffer <- dx * 0.3
+  }
+
+  # Control points based on orientation
+  switch(orientation,
+         "+/+" = {
+           P0 <- c(x0, y0)
+           P1 <- c(x0 + buffer, y0)
+           P4 <- c(x1 - buffer, y1)
+           P5 <- c(x1, y1)
+         },
+         "-/-" = {
+           P0 <- c(x0, y0)
+           P1 <- c(x0 - buffer, y0)
+           P4 <- c(x1 + buffer, y1)
+           P5 <- c(x1, y1)
+         },
+         "+/-" = {
+           P0 <- c(x0, y0)
+           P1 <- c(x0 + buffer, y0)
+           P4 <- c(x1 + buffer, y1)
+           P5 <- c(x1, y1)
+         },
+         "-/+" = {
+           P0 <- c(x0, y0)
+           P1 <- c(x0 - buffer, y0)
+           P4 <- c(x1 - buffer, y1)
+           P5 <- c(x1, y1)
+         },
+         "*" = {
+           # Default upward arc (like SeqArch)
+           ctrl_x <- (x0 + x1) / 2
+           ctrl_y <- max(y0, y1) + dx * 0.25
+           t <- seq(0, 1, length.out = 100)
+           bez_x <- (1 - t)^3 * x0 + 3 * (1 - t)^2 * t * ctrl_x +
+             3 * (1 - t) * t^2 * ctrl_x + t^3 * x1
+           bez_y <- (1 - t)^3 * y0 + 3 * (1 - t)^2 * t * ctrl_y +
+             3 * (1 - t) * t^2 * ctrl_y + t^3 * y1
+           lines(bez_x, bez_y, col = col, lwd = lwd)
+           return(invisible())
+         },
+         {
+           warning(sprintf("Unknown orientation '%s'; skipping draw", orientation))
+           return(invisible())
+         }
+  )
+
+  # Intermediate control points for smoothness
+  P2 <- P1 + (P4 - P1) * 0.4
+  P3 <- P1 + (P4 - P1) * 0.6
+
+  # Generate Bezier curve
+  t <- seq(0, 1, length.out = 100)
+  bez_x <- (1 - t)^5 * P0[1] +
+    5 * (1 - t)^4 * t * P1[1] +
+    10 * (1 - t)^3 * t^2 * P2[1] +
+    10 * (1 - t)^2 * t^3 * P3[1] +
+    5 * (1 - t) * t^4 * P4[1] +
+    t^5 * P5[1]
+
+  bez_y <- (1 - t)^5 * P0[2] +
+    5 * (1 - t)^4 * t * P1[2] +
+    10 * (1 - t)^3 * t^2 * P2[2] +
+    10 * (1 - t)^2 * t^3 * P3[2] +
+    5 * (1 - t) * t^4 * P4[2] +
+    t^5 * P5[2]
+
+  lines(bez_x, bez_y, col = col, lwd = lwd)
+}
 
 
 
@@ -1400,6 +1541,14 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
             curve = sf@curve[i],
             col = sf@color[i],
             lwd = 1.2
+          )
+        } else if (is(sf, "SeqString")) {
+          drawSeqString(
+            x0 = x0_abs, y0 = y0_abs,
+            x1 = x1_abs, y1 = y1_abs,
+            orientation = sf@orientation[i],
+            col = sf@color[i],
+            lwd = 1.5
           )
         } else {
           warning("Unknown SeqLink subclass — skipping.")
