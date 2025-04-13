@@ -805,7 +805,7 @@ drawSeqString <- function(x0, y0, x1, y1, orientation = "*",
 
   # Set horizontal "stretch" buffer
   if (is.null(buffer)) {
-    buffer <- dx * 0.3
+    buffer <- dx * 0.1
   }
 
   # Control points based on orientation
@@ -903,6 +903,237 @@ setClass("SeqAnnotation",
          slots = list(annotationType = "character"))
 
 
+## AnnoFeature ----
+#' AnnoFeature-Class
+#' @description Basic annotation box with optional labels and shapes.
+#' @export
+setClass("AnnoFeature",
+         contains = "SeqAnnotation",
+         slots = list(
+           gr = "GRanges",
+           labels = "character",
+           color = "character",
+           orientation = "character",
+           shape = "character",
+           x0 = "numeric",
+           x1 = "numeric",
+           y0 = "numeric",
+           y1 = "numeric"
+         )
+)
+
+
+
+
+
+#' AnnoFeature
+#' @description Constructs an AnnoFeature object from gene or enhancer annotations
+#' @param gr A GRanges object with annotation features (e.g., from RefSeq)
+#' @param labelCol Column name for feature labels (e.g., gene names)
+#' @param colorCol Optional column for color by feature type or category
+#' @export
+AnnoFeature <- function(gr,
+                        labelCol = NULL,
+                        color = "gray30",
+                        colorCol = NULL,
+                        orientation = "*",
+                        shape = "rect",
+                        x0 = start(gr),
+                        x1 = end(gr),
+                        y0 = 0,
+                        y1 = 1) {
+
+  if (!inherits(gr, "GRanges")) stop("Input must be a GRanges object.")
+
+  labels <- if (!is.null(labelCol) && labelCol %in% names(mcols(gr))) {
+    as.character(mcols(gr)[[labelCol]])
+  } else {
+    rep(NA_character_, length(gr))
+  }
+
+  colors <- if (!is.null(colorCol) && colorCol %in% names(mcols(gr))) {
+    as.character(mcols(gr)[[colorCol]])
+  } else {
+    rep(color, length(gr))
+  }
+  n <- length(gr)
+  shapes <- rep(shape, n)
+  y0 = rep(y0, n)
+  y1 = rep(y1,n)
+  strand_vals <- as.character(strand(gr))
+  orientations <- ifelse(strand_vals %in% c("+", "-"), strand_vals, "*")
+
+  new("AnnoFeature", gr = gr, labels = labels, color = colors, shape = shapes, orientation = orientations, y0 = y0, y1 = y1, x0 = as.numeric(x0), x1 = as.numeric(x1))
+}
+
+
+#' drawAnnoFeature
+#' @description Draw annotation features with different shape styles
+#' @export
+drawAnnoFeature <- function(gr, labels = NULL, orientation = NULL,
+                            shape = "rect",
+                            x0 = NULL, x1 = NULL,
+                            xlim = NULL, ybase = 0, tier_height = 1,
+                            y0s = NULL, y1s = NULL,
+                            col = "gray30", border = "black", label_cex = 0.6,
+                            label_offset = 3,
+                            returnTiers = FALSE) {
+
+  if (length(gr) == 0) return(invisible())
+
+  n <- length(gr)
+  if (is.null(x0)) x0 <- start(gr)
+  if (is.null(x1)) x1 <- end(gr)
+  if (is.null(labels)) labels <- rep(NA_character_, n)
+  if (is.null(orientation)) orientation <- rep("*", n)
+  if (length(shape) == 1) shape <- rep(shape, n)
+
+
+  # Estimate label width for stacking
+  label_widths <- strwidth(labels, cex = label_cex)
+  x_left <- ifelse(orientation %in% c("-", "-/-", "-/+", "*"), x0, x0 - label_widths)
+  x_right <- ifelse(orientation %in% c("-", "-/-", "-/+", "*"), x1 + label_widths, x1)
+
+  # Sort and assign tiers based on annotation+label space
+  ord <- order(x_left)
+  x0 <- x0[ord]
+  x1 <- x1[ord]
+  x_left <- x_left[ord]
+  x_right <- x_right[ord]
+  labels <- labels[ord]
+  orientation <- orientation[ord]
+  shape <- shape[ord]
+  col <- if (length(col) == 1) rep(col, n) else col[ord]
+
+  tiers <- integer(n)
+  current_ends <- c()
+
+  for (i in seq_along(x_left)) {
+    placed <- FALSE
+    for (t in seq_along(current_ends)) {
+      if (x_left[i] > current_ends[t]) {
+        current_ends[t] <- x_right[i]
+        tiers[i] <- t
+        placed <- TRUE
+        break
+      }
+    }
+    if (!placed) {
+      current_ends <- c(current_ends, x_right[i])
+      tiers[i] <- length(current_ends)
+    }
+  }
+
+  # Use y0s/y1s if provided; otherwise compute from ybase + tiers
+  if (is.null(y0s) || is.null(y1s)) {
+    y0s <- ybase + (tiers - 1) * tier_height
+    y1s <- y0s + tier_height * 0.8
+  }
+
+  if (!returnTiers){
+    for (i in seq_along(x0)) {
+      dir <- switch(orientation[i], "+" = 1, "-" = -1, "*" = 1)
+
+      if (shape[i] == "rect") {
+        rect(x0[i], y0s[i], x1[i], y1s[i], col = col[i], border = border)
+
+        # Chevron shape (arrowhead carved into rear)
+      } else if (shape[i] == "chevron") {
+        arrow_width <- 8  # you can adjust this globally
+        mid_y <- (y0s[i] + y1s[i]) / 2
+        width <- abs(x1[i] - x0[i])
+
+        if (orientation[i] == "+" || orientation[i] == "*") {
+          if (width < arrow_width) {
+            polygon(
+              x = c(x1[i] - arrow_width, x1[i], x1[i] - arrow_width),
+              y = c(y0s[i], mid_y, y1s[i]),
+              col = col[i], border = border
+            )
+          } else {
+            polygon(
+              x = c(x0[i], x0[i] + arrow_width, x1[i], x0[i] + arrow_width, x0[i]),
+              y = c(y0s[i], y0s[i], mid_y, y1s[i], y1s[i]),
+              col = col[i], border = border
+            )
+          }
+        } else {
+          if (width < arrow_width) {
+            polygon(
+              x = c(x0[i] + arrow_width, x0[i], x0[i] + arrow_width),
+              y = c(y0s[i], mid_y, y1s[i]),
+              col = col[i], border = border
+            )
+          } else {
+            polygon(
+              x = c(x1[i], x1[i] - arrow_width, x0[i], x1[i] - arrow_width, x1[i]),
+              y = c(y0s[i], y0s[i], mid_y, y1s[i], y1s[i]),
+              col = col[i], border = border
+            )
+          }
+        }
+
+        # Marker shape (box with point on front)
+      } else if (shape[i] == "marker") {
+        arrow_width <- 8  # you can adjust this globally
+        mid_y <- (y0s[i] + y1s[i]) / 2
+        width <- abs(x1[i] - x0[i])
+
+        if (orientation[i] == "+" || orientation[i] == "*") {
+          if (width < arrow_width) {
+            polygon(
+              x = c(x0[i], x1[i], x0[i]),
+              y = c(y0s[i], mid_y, y1s[i]),
+              col = col[i], border = border
+            )
+          } else {
+            polygon(
+              x = c(x0[i], x1[i] - arrow_width, x1[i], x1[i] - arrow_width, x0[i]),
+              y = c(y0s[i], y0s[i], mid_y, y1s[i], y1s[i]),
+              col = col[i], border = border
+            )
+          }
+        } else {
+          if (width < arrow_width) {
+            polygon(
+              x = c(x1[i], x0[i], x1[i]),
+              y = c(y0s[i], mid_y, y1s[i]),
+              col = col[i], border = border
+            )
+          } else {
+            polygon(
+              x = c(x1[i], x0[i] + arrow_width, x0[i], x0[i] + arrow_width, x1[i]),
+              y = c(y0s[i], y0s[i], mid_y, y1s[i], y1s[i]),
+              col = col[i], border = border
+            )
+          }
+        }
+      }
+
+      # Draw label
+      label_side <- if (orientation[i] == "-") "right" else "left"
+      label_x <- if (label_side == "left") x0[i] - label_offset else x1[i] + label_offset
+      label_adj <- if (label_side == "left") 1 else 0
+
+      if (!is.na(labels[i]) && nzchar(labels[i])) {
+        text(x = label_x,
+             y = (y0s[i] + y1s[i]) / 2,
+             labels = labels[i],
+             adj = c(label_adj, 0.5),
+             cex = label_cex)
+      }
+    }
+}
+
+  if (returnTiers) {
+    return(tiers)
+  }
+}
+
+
+
+
+## SeqIdeogram ----
 
 #' stainToColor
 #'
@@ -1261,9 +1492,9 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
   # --- Draw any SeqIdeogram objects ---
   for (track_idx in seq_len(totalTracks)) {
     track <- sp@tracks[[track_idx]]
-    for (feat in track@features) {
-      if (inherits(feat, "SeqIdeogram")) {
-        drawIdeogram(feat, layout_info, track_idx)
+    for (sf in track@features) {
+      if (inherits(sf, "SeqIdeogram")) {
+        drawIdeogram(sf, layout_info, track_idx)
       }
     }
   }
@@ -1316,6 +1547,76 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
     seg_x0 <- numeric(); seg_y0 <- numeric(); seg_x1 <- numeric(); seg_y1 <- numeric(); seg_col <- character()
     pt_x <- numeric(); pt_y <- numeric(); pt_col <- character()
     box_x0 <- numeric(); box_y0 <- numeric(); box_x1 <- numeric(); box_y1 <- numeric(); box_col <- character()
+
+    # Loop over annotation features
+    for (sf in track@features) {
+      if (is(sf, "AnnoFeature")) {
+
+        gr <- sf@gr
+        ov <- findOverlaps(gr, layout_info$global_windows, select = "first")
+        valid <- !is.na(ov)
+        if (!any(valid)) next
+
+        gr <- gr[valid]
+        win_idx <- ov[valid]
+        labels <- sf@labels[valid]
+        strand_vals <- as.character(strand(gr))
+        orientation <- ifelse(strand_vals %in% c("+", "-"), strand_vals, "*")
+
+        shape <- if (!is.null(sf@shape)) sf@shape[valid] else rep("rect", length(gr))
+        col <- sf@color[valid]
+
+        x0_abs <- globalTransformX(start(gr), win_idx, layout_info)
+        x1_abs <- globalTransformX(end(gr), win_idx, layout_info)
+
+        # For each annotation, assign it to this track index
+        t_vec <- rep(track_idx, length(gr))
+
+        # Compute y0/y1 for each tier
+        # Compute y0/y1 for each tier (before transform)
+        tiers <- drawAnnoFeature(
+          gr = gr,
+          labels = labels,
+          orientation = orientation,
+          shape = shape,
+          x0 = x0_abs,
+          x1 = x1_abs,
+          col = col,
+          returnTiers = TRUE
+        )
+
+        n_tiers <- max(tiers)
+        y0_rel <- track_y_min + (tiers - 1) * (track_y_max - track_y_min) / n_tiers
+        y1_rel <- y0_rel + (track_y_max - track_y_min) / n_tiers * 0.8
+
+        # Convert to absolute plotting coordinates
+        y0_abs <- globalTransformY(y0_rel, t_vec, layout_info,
+                                   track_y_min = rep(track_y_min, totalTracks),
+                                   track_y_max = rep(track_y_max, totalTracks))
+        y1_abs <- globalTransformY(y1_rel, t_vec, layout_info,
+                                   track_y_min = rep(track_y_min, totalTracks),
+                                   track_y_max = rep(track_y_max, totalTracks))
+
+        # Optionally: overwrite x0/x1 in GRanges to preserve for labels, if needed
+        # mcols(gr)$x0_abs <- x0_abs
+        # mcols(gr)$x1_abs <- x1_abs
+
+        # Replace the GRanges' ranges with transformed values (tricky but works)
+        ranges(gr) <- IRanges(start = x0_abs, end = x1_abs)
+        drawAnnoFeature(
+          gr = gr,
+          labels = labels,
+          orientation = orientation,
+          shape = shape,
+          x0 = x0_abs,
+          x1 = x1_abs,
+          y0s = y0_abs,
+          y1s = y1_abs,
+          col = col
+        )
+
+      }
+    }
 
     # Loop over each feature that is not a spanning (SeqLink) feature.
     for (sf in track@features) {
@@ -1430,7 +1731,7 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
       if (nchar(track@yTitle) > 0) {
         title_x <- x_pos - tick_length - 40
         title_y <- (y0 + y1) / 2
-        text(title_x, title_y, labels = track@yTitle, font = 2, adj = c(1, 0.5), cex = label_cex)
+        text(title_x, title_y, labels = track@yTitle, font = 1, adj = c(1, 0.5), cex = label_cex)
       }
     }
   }
@@ -1486,7 +1787,6 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
 
         } else if (inherits(sf, "SeqArc")) {
           orientation <- if (!is.na(sf@orientation[i])) sf@orientation[i] else "*"
-          #offset <- abs(x1_abs - x0_abs) * 0.25 * ifelse(orientation %in% c("*", "up", "+", "+/+", "+/-"), 1, -1)
           drawArc(x0_abs, y0_abs, x1_abs, y1_abs, orientation, col = sf@color[i], lwd = 1.2)
 
         } else if (is(sf, "SeqArch")) {
@@ -1563,6 +1863,8 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
 # TODOS ----
 
 # SeqFeatures
+# TODO - [X] SeqFeature - Point
+# TODO - [X] SeqFeature - Segment
 # TODO - [X] SeqFeature - Bar
 # TODO - [ ] SeqFeature - Stacked Bar
 # TODO - [ ] SeqFeature - Line (path through observations)
@@ -1579,21 +1881,24 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
 # TODO - [X] SeqLink - Arch (optional height argument for y maximum, differs from arch in that it is bounded by vertical lines and added height functionality)
 # TODO - [/] SeqLink - ReCon (Special arch that separates types of rearrangements. Based on doi.org/10.1093/bioinformatics/btad719. Places inversions on one track and dup/del on another.
       # Still need to add proper tier lines.
-# TODO - [ ] SeqLink - String (optional height argument for y maximum)
-# TODO - [ ] Plot 'stubs' of data whose partner is outside the plotting window.
+# TODO - [/] SeqLink - String (optional height argument for y maximum)
 # TODO - [ ] SeqLink - Barbell (intended to visualize paired reads)
 # TODO - [ ] SeqLink - Band (for synteny-like connections)
+# TODO - [ ] Plot 'stubs' of data whose partner is outside the plotting window.
 
 # SeqAnnotations
 # TODO - [X] SeqAnnotation - Ideogram
-# TODO - [ ] SeqAnnotation - Gene/Transcript
+# TODO - [X] SeqAnnotation - Feature (generic box or arrow marker)
+# TODO - [ ] SeqAnnotation - Genes/Exons/UTR/ETC...
+# TODO - [ ] SeqAnnotation - Transcripts
+# TODO - [ ] SeqAnnotation - Enhancers
 # TODO - [ ] SeqAnnotation - Legend
 # TODO - [ ] SeqAnnotation - Alignment
-# TODO - [ ] SeqAnnotation - Box
 # TODO - [ ] SeqAnnotation - Zoom
 # TODO - [ ] SeqAnnotation - Text
 
 # Window/Track Control
+# TODO - [ ] Manually set Y axes per track
 # TODO - [ ] Convert to grid graphics (rather than single canvas)
 # TODO - [ ] Add functionality for customWindows at the Seq Track level. I.e., not all tracks have the same windows.
 # TODO - [ ] Individual track and window gap control
