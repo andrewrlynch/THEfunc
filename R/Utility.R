@@ -1,7 +1,7 @@
-# -----------------------------------------------------------------------------
-# Generate random grange data
-# -----------------------------------------------------------------------------
-make_random_hg38_granges <- function(n_intervals = 1000, min_width = 50, max_width = 1000) {
+#' makeRandomHg38Grange
+#' @description Generate a random hg38 grange object
+#' @export
+makeRandomHg38Grange <- function(n_intervals = 1000, min_width = 50, max_width = 1000) {
   # Standard hg38 chromosome lengths (chr1-22, X, Y)
   chr_lengths <- c(
     "chr1"  = 248956422,
@@ -70,3 +70,90 @@ make_random_hg38_granges <- function(n_intervals = 1000, min_width = 50, max_wid
 
   return(gr)
 }
+
+
+
+#' AnnotateSvWithSegmentCn
+#' @description Annotate an SV vcf with total copy number at breakend positions.
+#' @export
+AnnotateSvWithSegmentCn <- function(sv_gr, cn_gr, slop = 5000, cn_col = "copy_number") {
+
+  sv_ranges <- StructuralVariantAnnotation::breakpointRanges(sv_gr)
+  sv_pairs <- StructuralVariantAnnotation::breakpointgr2pairs(sv_ranges)
+
+  # Helper function for annotating one end
+  annotate_one_end <- function(bkpt_gr, cn_gr, slop, cn_col) {
+    sv_slop <- suppressWarnings(resize(bkpt_gr, width = 1, fix = "start"))
+    sv_slop <- flank(sv_slop, width = slop, both = TRUE)
+
+    hits <- findOverlaps(sv_slop, cn_gr)
+    cn_vals <- rep(NA_real_, length(bkpt_gr))
+
+    for (i in seq_along(bkpt_gr)) {
+      print(i)
+      olap_idx <- subjectHits(hits)[queryHits(hits) == i]
+      if (length(olap_idx) == 0) next
+
+      overlapping_cns <- cn_gr[olap_idx]
+      cn_values <- mcols(overlapping_cns)[[cn_col]]
+
+      strand_val <- as.character(strand(bkpt_gr[i]))
+
+      if (length(overlapping_cns) == 1) {
+        cn_vals[i] <- cn_values
+      } else if (strand_val == "+") {
+        cn_vals[i] <- cn_values[which.min(start(overlapping_cns))]
+      } else if (strand_val == "-") {
+        cn_vals[i] <- cn_values[which.max(end(overlapping_cns))]
+      } else {
+        cn_vals[i] <- cn_values[1]  # fallback for strand == "*"
+      }
+    }
+
+    return(cn_vals)
+  }
+
+  # Annotate first and second breakends
+  cn_first <- annotate_one_end(sv_pairs@first, cn_gr, slop, cn_col)
+  cn_second <- annotate_one_end(sv_pairs@second, cn_gr, slop, cn_col)
+
+  # Add annotations to metadata
+  mcols(sv_pairs)$cn_first <- cn_first
+  mcols(sv_pairs)$cn_second <- cn_second
+
+  return(sv_pairs)
+}
+
+#' CreateSequenceWindows
+#' @description Create a GRanges object with specified ranges using e.g., chr1:100-200
+#' @export
+CreateSequenceWindows <- function(regions, padding = 0, genome = "hg38", add_chr = FALSE) {
+  # Ensure input is character
+  regions <- as.character(regions)
+
+  # Pattern to extract chrom, start, and end
+  parsed <- strcapture(
+    pattern = "^([^:]+):([0-9,]+)-([0-9,]+)$",
+    x = regions,
+    proto = list(chrom = character(), start = character(), end = character())
+  )
+
+  # Sanity check
+  if (nrow(parsed) != length(regions)) {
+    stop("Could not parse one or more regions. Make sure they are like 'chr1:100-200' or '1:100-200'.")
+  }
+
+  # Remove commas and convert to integers
+  parsed$start <- as.integer(gsub(",", "", parsed$start)) - padding
+  parsed$end   <- as.integer(gsub(",", "", parsed$end)) + padding
+  parsed$start[parsed$start < 1] <- 1
+
+  chrom <- if (add_chr) paste0("chr", parsed$chrom) else parsed$chrom
+
+  GenomicRanges::GRanges(
+    seqnames = chrom,
+    ranges = IRanges::IRanges(start = parsed$start, end = parsed$end)
+  ) |> sort()
+}
+
+
