@@ -256,65 +256,16 @@ setupGlobalLayout <- function(sp, plotWidth = 1000, globalWindows = NULL) {
 
 # SeqLink drawing ----
 
-#' bezier3
-#' @name bezier3
+#' bezier
+#' @name bezier
 #' @description
-#' Function that returns coordinates of a cubic bezier curve
+#' Function that returns coordinates of a bezier curve
 #' @export
 #' @author Andrew Lynch
-bezier3 <- function(P, t) {
-  n <- 3
+bezier <- function(P, t, n) {
   B <- sapply(0:n, function(i) choose(n, i) * (1 - t)^(n - i) * t^i)
   x <- colSums(B * P[,1])
   y <- colSums(B * P[,2])
-  cbind(x, y)
-}
-
-
-
-#' bezier4
-#' @name bezier4
-#' @description
-#' Function that returns coordinates of a cubic bezier curve
-#' @export
-#' @author Andrew Lynch
-bezier4 <- function(P, t) {
-  n <- 4
-  B <- sapply(0:n, function(i) choose(n, i) * (1 - t)^(n - i) * t^i)
-  x <- colSums(B * P[,1])
-  y <- colSums(B * P[,2])
-  cbind(x, y)
-}
-
-
-
-#' bezier5
-#' @name bezier5
-#' @description
-#' Function that returns coordinates of a 5th order bezier curve
-#' @export
-#' @author Andrew Lynch
-bezier5 <- function(P, t) {
-  n <- 5
-  B <- sapply(0:n, function(i) choose(n, i) * (1 - t)^(n - i) * t^i)
-  x <- colSums(B * P[,1])
-  y <- colSums(B * P[,2])
-  cbind(x, y)
-}
-
-
-
-#' bezier6
-#' @name bezier6
-#' @description
-#' Function that returns coordinates of a 6th order bezier curve
-#' @export
-#' @author Andrew Lynch
-bezier6 <- function(P, t) {
-  n <- 6
-  B <- sapply(0:n, function(i) choose(n, i) * (1 - t)^(n - i) * t^i)
-  x <- colSums(B * P[, 1])
-  y <- colSums(B * P[, 2])
   cbind(x, y)
 }
 

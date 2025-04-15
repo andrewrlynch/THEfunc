@@ -13,7 +13,8 @@ SeqTrack(
   trackBackgroundColor = "transparent",
   trackBorderColor = "transparent",
   windowBackgroundColor = "transparent",
-  windowBorderColor = "grey50"
+  windowBorderColor = "grey50",
+  fixedStubs = T
 )
 }
 \arguments{
