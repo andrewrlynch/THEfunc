@@ -498,6 +498,53 @@ SeqLink <- function(gr1, gr2,
 }
 
 
+drawLinkStub <- function(x, y, direction = "right",
+                         layout = NULL, track_idx = NULL,
+                         y_top = NULL, height = NULL,
+                         track_y_min = NULL, track_y_max = NULL,
+                         fixedStubs = TRUE,
+                         stub_len = 25, col = "gray30", lwd = 1.5) {
+
+  # Determine y_top logic
+  if (is.null(y_top)) {
+    if (!is.null(layout) && !is.null(track_idx)) {
+      if (fixedStubs) {
+        y_top <- layout$global_track_tops[track_idx]
+      } else if (!is.null(height)) {
+        y_top <- globalTransformY(height, track_idx, layout,
+                                  track_y_min = rep(track_y_min, length(layout$global_track_bottoms)),
+                                  track_y_max = rep(track_y_max, length(layout$global_track_bottoms)))
+      } else {
+        stop("Need 'height' if fixedStubs = FALSE.")
+      }
+    } else if (!is.null(height)) {
+      y_top <- y + height
+    } else {
+      stop("Could not determine y_top: provide layout, height, or y_top.")
+    }
+  }
+
+  # 1. Vertical stem
+  segments(x, y, x, y_top, col = col, lwd = lwd)
+
+  # 2. Hook (45° curve)
+  n <- 20
+  t <- seq(0, 45 * pi / 180, length.out = n)
+  if (direction == "right") {
+    cx <- x + stub_len * (1 - cos(t))
+    cy <- y_top + stub_len * sin(t)
+  } else if (direction == "left") {
+    cx <- x - stub_len * (1 - cos(t))
+    cy <- y_top + stub_len * sin(t)
+  }
+
+
+  lines(cx, cy, col = col, lwd = lwd)
+  #arrows(tail(cx, 1), tail(cy, 1), tail(cx, 1) + ifelse(direction == "right", 5, -5), tail(cy, 1), length = 0.05, col = col, lwd = lwd)
+}
+
+
+
 
 
 
@@ -975,8 +1022,8 @@ drawAnnoFeature <- function(gr, labels = NULL, orientation = NULL,
                             x0 = NULL, x1 = NULL,
                             xlim = NULL, ybase = 0, tier_height = 1,
                             y0s = NULL, y1s = NULL,
-                            col = "gray30", border = "black", label_cex = 0.6,
-                            label_offset = 3,
+                            col = "gray30", border = NA, label_cex = 0.6,
+                            label_offset = 4,
                             returnTiers = FALSE) {
 
   if (length(gr) == 0) return(invisible())
@@ -1032,50 +1079,60 @@ drawAnnoFeature <- function(gr, labels = NULL, orientation = NULL,
 
   if (!returnTiers){
     for (i in seq_along(x0)) {
+      arrow_width <- 8
       dir <- switch(orientation[i], "+" = 1, "-" = -1, "*" = 1)
 
       if (shape[i] == "rect") {
         rect(x0[i], y0s[i], x1[i], y1s[i], col = col[i], border = border)
-
-        # Chevron shape (arrowhead carved into rear)
-      } else if (shape[i] == "chevron") {
-        arrow_width <- 8  # you can adjust this globally
-        mid_y <- (y0s[i] + y1s[i]) / 2
+      } else if (shape[i] == "arrow") {
+        y_mid <- (y0s[i] + y1s[i]) / 2
         width <- abs(x1[i] - x0[i])
 
+        if (width == 0 || is.na(width)) next  # skip zero-length arrows
+
         if (orientation[i] == "+" || orientation[i] == "*") {
-          if (width < arrow_width) {
-            polygon(
-              x = c(x1[i] - arrow_width, x1[i], x1[i] - arrow_width),
-              y = c(y0s[i], mid_y, y1s[i]),
-              col = col[i], border = border
-            )
-          } else {
-            polygon(
-              x = c(x0[i], x0[i] + arrow_width, x1[i], x0[i] + arrow_width, x0[i]),
-              y = c(y0s[i], y0s[i], mid_y, y1s[i], y1s[i]),
-              col = col[i], border = border
-            )
-          }
+          arrows(x0[i], y_mid, x1[i], y_mid, length = arrow_width / 200, col = col[i], lwd = 2, angle = 45)
         } else {
-          if (width < arrow_width) {
-            polygon(
-              x = c(x0[i] + arrow_width, x0[i], x0[i] + arrow_width),
-              y = c(y0s[i], mid_y, y1s[i]),
-              col = col[i], border = border
-            )
-          } else {
-            polygon(
-              x = c(x1[i], x1[i] - arrow_width, x0[i], x1[i] - arrow_width, x1[i]),
-              y = c(y0s[i], y0s[i], mid_y, y1s[i], y1s[i]),
-              col = col[i], border = border
-            )
-          }
+          arrows(x1[i], y_mid, x0[i], y_mid, length = arrow_width / 200, col = col[i], lwd = 2, angle = 45)
         }
 
-        # Marker shape (box with point on front)
+      } else if (shape[i] == "multi-arrow") {
+        y_mid <- (y0s[i] + y1s[i]) / 2
+        width <- abs(x1[i] - x0[i])
+
+        if (width == 0 || is.na(width)) next
+
+        # Settings
+        arrow_spacing <- 10
+        arrowhead_len <- 10
+
+        # Orientation-aware setup
+        if (orientation[i] == "+" || orientation[i] == "*") {
+          x_start <- x0[i]
+          x_end <- x1[i]
+          by <- arrow_spacing
+          head_from <- function(x) arrows(x - arrowhead_len, y_mid, x, y_mid, length = 0.05, col = col[i], lwd = 1, angle = 45)
+        } else {
+          x_start <- x1[i]
+          x_end <- x0[i]
+          by <- -arrow_spacing
+          head_from <- function(x) arrows(x + arrowhead_len, y_mid, x, y_mid, length = 0.05, col = col[i], lwd = 1, angle = 45)
+        }
+
+        # Draw base line
+        segments(x0[i], y_mid, x1[i], y_mid, col = col[i], lwd = 1.5)
+
+        # Internal arrows
+        if ((by > 0 && x_end - x_start > 2 * arrow_spacing) ||
+            (by < 0 && x_start - x_end > 2 * abs(arrow_spacing))) {
+          x_seq <- seq(x_start + by, x_end - by, by = by)
+          for (x in x_seq) head_from(x)
+        }
+
+        # Terminal arrow
+        head_from(x_end)
+
       } else if (shape[i] == "marker") {
-        arrow_width <- 8  # you can adjust this globally
         mid_y <- (y0s[i] + y1s[i]) / 2
         width <- abs(x1[i] - x0[i])
 
@@ -1317,10 +1374,328 @@ setClass("SeqTrack",
     trackBackgroundColor = "character",
     trackBorderColor = "character",
     windowBackgroundColor = "character",
-    windowBorderColor = "character"
+    windowBorderColor = "character",
+    fixedStubs = "logical"
   )
 )
 
+
+
+## SeqGene ----
+#' AnnoGene-Class
+#' @description Annotation object for grouped exon visualization
+#' @export
+setClass("AnnoGene",
+         contains = "AnnoFeature",
+         slots = list(
+           gene_id = "character"
+         )
+)
+
+
+#' AnnoGene
+#' @description Draws grouped gene annotations as exon boxes connected by multi-arrow lines
+#' @export
+AnnoGene <- function(gr,
+                     geneCol = "gene_name",
+                     strandCol = NULL,
+                     color = "gray30",
+                     colorCol = NULL,
+                     shape = "rect") {
+
+  if (!inherits(gr, "GRanges")) stop("Input must be a GRanges object.")
+
+  # Filter to exon rows (if present)
+  if ("type" %in% names(mcols(gr))) {
+    exon_mask <- mcols(gr)$type == "exon"
+    if (any(exon_mask)) gr <- gr[exon_mask]
+  }
+
+  # Collapse to unique exon ranges per gene
+  gene_ids <- as.character(mcols(gr)[[geneCol]])
+  gr$.__gene_id__ <- gene_ids
+  gr <- gr[!duplicated(paste0(seqnames(gr), ":", start(gr), "-", end(gr), "_", gene_ids))]
+
+  n <- length(gr)
+  y0 <- rep(0, n)
+  y1 <- rep(1, n)
+
+  # Strand handling
+  orientation <- if (!is.null(strandCol)) {
+    as.character(mcols(gr)[[strandCol]])
+  } else {
+    as.character(strand(gr))
+  }
+  orientation[!orientation %in% c("+", "-")] <- "*"
+
+  # Default labels = gene name
+  labels <- gene_ids
+  labels[is.na(labels)] <- ""
+
+  # Colors
+  colors <- if (!is.null(colorCol) && colorCol %in% names(mcols(gr))) {
+    as.character(mcols(gr)[[colorCol]])
+  } else {
+    rep(color, n)
+  }
+
+  # Shape
+  shapes <- rep(shape, n)
+
+  new("AnnoGene",
+      gr = gr,
+      labels = labels,
+      color = colors,
+      shape = shapes,
+      orientation = orientation,
+      gene_id = gene_ids,
+      y0 = y0,
+      y1 = y1)
+}
+
+
+
+#' drawAnnoGene
+#' @description Draws grouped gene annotations as exon boxes connected by multi-arrow lines
+#' @export
+#' drawAnnoGene
+#' @description Draws grouped gene annotations as exon boxes connected by multi-arrow lines
+#' @export
+drawAnnoGene <- function(ag, layout, track_idx,
+                         track_y_min = 0, track_y_max = 1,
+                         totalTracks,
+                         arrow_spacing = 10,
+                         arrowhead_len = 1,
+                         exon_height_ratio = 0.8,
+                         label_cex = 0.7,
+                         label_offset = 5) {
+
+  if (!inherits(ag, "AnnoGene")) stop("Input must be an AnnoGene object")
+  gr <- ag@gr
+  if (length(gr) == 0) return(invisible())
+
+  # Pre-filter to exons that actually overlap visible windows
+  ov <- findOverlaps(gr, layout$global_windows, select = "first")
+  valid <- !is.na(ov)
+  if (!any(valid)) return(invisible())
+
+  # Keep only overlapping exons and metadata
+  gr           <- gr[valid]
+  gene_ids     <- ag@gene_id[valid]
+  labels       <- ag@labels[valid]
+  colors       <- ag@color[valid]
+  orientations <- ag@orientation[valid]
+
+  # Group by gene
+  gene_map        <- split(gr, gene_ids)
+  label_map       <- tapply(labels, gene_ids, function(x) x[1])
+  color_map       <- tapply(colors, gene_ids, function(x) x[1])
+  orientation_map <- tapply(orientations, gene_ids, function(x) x[1])
+
+  label_pad <- 50000
+
+  gene_ranges <- GRanges(
+    seqnames = sapply(gene_map, function(g) as.character(seqnames(g)[1])),
+    ranges = IRanges(
+      start = mapply(function(g, ori) {
+        if (ori == "+") min(start(g)) - label_pad else min(start(g))
+      }, gene_map, orientation_map[names(gene_map)]),
+      end = mapply(function(g, ori) {
+        if (ori == "-") max(end(g)) + label_pad else max(end(g))
+      }, gene_map, orientation_map[names(gene_map)])
+    ),
+    gene_id = names(gene_map)
+  )
+
+
+  assignBrickTiers <- function(gr) {
+    gr <- gr[order(seqnames(gr), start(gr))]
+    tiers <- integer(length(gr))
+    ranges_by_seq <- split(gr, seqnames(gr))
+
+    for (seq in names(ranges_by_seq)) {
+      group <- ranges_by_seq[[seq]]
+      end_last <- c()
+      for (i in seq_along(group)) {
+        s <- start(group)[i]
+        tier <- which(s >= end_last)
+        if (length(tier) == 0) {
+          tiers[which(gr == group[i])] <- length(end_last) + 1
+          end_last <- c(end_last, end(group)[i])
+        } else {
+          t <- tier[1]
+          tiers[which(gr == group[i])] <- t
+          end_last[t] <- end(group)[i]
+        }
+      }
+    }
+
+    return(tiers)
+  }
+
+  assignBrickTiersAbsolute <- function(x0, x1) {
+    o <- order(x1)
+    x0 <- x0[o]
+    x1 <- x1[o]
+    n <- length(x0)
+    tiers <- integer(n)
+    end_last <- numeric(0)
+
+    for (i in seq_len(n)) {
+      s <- x0[i]
+      tier <- which(s >= end_last)
+      if (length(tier) == 0) {
+        t <- length(end_last) + 1
+        end_last <- c(end_last, x1[i])
+      } else {
+        t <- tier[1]
+        end_last[t] <- x1[i]
+      }
+      tiers[o[i]] <- t
+    }
+
+    return(tiers)
+  }
+
+  # Compute one gene span per group
+  gene_ids <- names(gene_map)
+
+  gene_info <- lapply(gene_ids, function(gid) {
+    g <- gene_map[[gid]]
+    list(
+      gid = gid,
+      seqname = as.character(seqnames(g)[1]),
+      start = min(start(g)),
+      end = max(end(g)),
+      strand = orientation_map[[gid]]
+    )
+  })
+  gene_info <- do.call(rbind, lapply(gene_info, as.data.frame))
+
+  # Transform to absolute x-coordinates
+  gene_ov <- findOverlaps(GRanges(gene_info$seqname, IRanges(gene_info$start, gene_info$end)),
+                          layout$global_windows, select = "first")
+
+  x0_abs <- globalTransformX(gene_info$start, gene_ov, layout)
+  x1_abs <- globalTransformX(gene_info$end, gene_ov, layout)
+
+  # Estimate label padding in absolute space
+  label_pad <- (layout$x1 - layout$x0) * 0.03  # ~3% of width
+
+  # Adjust for strand
+  x0_label <- ifelse(gene_info$strand == "+", x0_abs - label_pad, x0_abs)
+  x1_label <- ifelse(gene_info$strand == "-", x1_abs + label_pad, x1_abs)
+
+  # Assign non-overlapping tiers
+  gene_tiers <- assignBrickTiersAbsolute(x0_label, x1_label)
+  names(gene_tiers) <- gene_ids
+  n_tiers <- max(gene_tiers)
+
+  tier_height <- (track_y_max - track_y_min) / n_tiers
+
+  for (i in seq_along(gene_ids)) {
+    gid <- names(gene_map)[i]
+    gene_exons <- gene_map[[i]]
+    if (length(gene_exons) == 0) next
+
+    label <- if (!is.null(label_map[[gid]])) label_map[[gid]] else gid
+    color <- if (!is.null(color_map[[gid]])) color_map[[gid]] else "gray30"
+    orientation <- if (!is.null(orientation_map[[gid]])) orientation_map[[gid]] else "*"
+
+    # Y-coordinates (one line per gene)
+    tier_idx <- gene_tiers[[gid]]
+    exon_y0 <- track_y_min + (tier_idx - 1) * tier_height
+    exon_y1 <- exon_y0 + tier_height * exon_height_ratio
+    y_mid   <- (exon_y0 + exon_y1) / 2
+
+    # Map exon coords to plot space
+    exon_ov <- findOverlaps(gene_exons, layout$global_windows, select = "first")
+    exon_valid <- !is.na(exon_ov)
+    if (!any(exon_valid)) next
+
+    gene_exons <- gene_exons[exon_valid]
+    exon_ov <- exon_ov[exon_valid]
+    x0_abs <- globalTransformX(start(gene_exons), exon_ov, layout)
+    x1_abs <- globalTransformX(end(gene_exons), exon_ov, layout)
+
+    t_scalar <- track_idx
+
+    # Transform Y coordinates into absolute plotting space
+    exon_y0_abs <- globalTransformY(exon_y0, t_scalar, layout,
+                                    track_y_min = rep(track_y_min, totalTracks),
+                                    track_y_max = rep(track_y_max, totalTracks))
+    exon_y1_abs <- globalTransformY(exon_y1, t_scalar, layout,
+                                    track_y_min = rep(track_y_min, totalTracks),
+                                    track_y_max = rep(track_y_max, totalTracks))
+    y_mid_abs   <- (exon_y0_abs + exon_y1_abs) / 2
+
+    # Gene span (backbone)
+    gene_start <- min(start(gene_exons))
+    gene_end   <- max(end(gene_exons))
+    gene_ov    <- exon_ov[which.min(start(gene_exons))]
+    if (is.na(gene_ov)) next
+
+    line_x0 <- globalTransformX(gene_start, gene_ov, layout)
+    line_x1 <- globalTransformX(gene_end, gene_ov, layout)
+
+    #print(c(line_x0 = line_x0, line_x1 = line_x1, exon_y0_abs = exon_y0_abs, exon_y1_abs = exon_y1_abs)) #!
+
+    # Orientation-aware arrow logic
+    if (orientation == "+" || orientation == "*") {
+      x_start <- line_x0 + arrow_spacing
+      x_end   <- line_x1 - arrow_spacing
+      by      <- arrow_spacing
+      draw_terminal_arrow <- function() {
+        arrows(line_x1 - arrowhead_len, y_mid_abs, line_x1, y_mid_abs, length = 0.05, col = color, lwd = 1, angle = 45)
+      }
+    } else {
+      x_start <- line_x1 - arrow_spacing
+      x_end   <- line_x0 + arrow_spacing
+      by      <- -arrow_spacing
+      draw_terminal_arrow <- function() {
+        arrows(line_x0 + arrowhead_len, y_mid_abs, line_x0, y_mid_abs, length = 0.05, col = color, lwd = 1, angle = 45)
+      }
+    }
+
+    # Draw gene backbone
+    segments(line_x0, y_mid_abs, line_x1, y_mid_abs, col = color, lwd = 1.5)
+
+    # if ((by > 0 && x_start < x_end) || (by < 0 && x_start > x_end)) {
+    #   x_seq <- seq(x_start, x_end, by = by)
+    #   for (x in x_seq) {
+    #     if (orientation == "+" || orientation == "*") {
+    #       arrows(x - arrowhead_len, y_mid_abs, x, y_mid_abs, length = 0.05, col = color, lwd = 1, angle = 45)
+    #     } else {
+    #       arrows(x + arrowhead_len, y_mid_abs, x, y_mid_abs, length = 0.05, col = color, lwd = 1, angle = 45)
+    #     }
+    #   }
+    # }
+
+    draw_terminal_arrow()
+
+    # Draw exon rectangles
+    for (j in seq_along(x0_abs)) {
+      rect(x0_abs[j], exon_y0_abs, x1_abs[j], exon_y1_abs, col = color, border = color)
+    }
+
+    # Draw label
+    if (!is.na(label) && nzchar(label)) {
+      label_x   <- if (orientation == "+") line_x0 - label_offset else line_x1 + label_offset
+      label_adj <- if (orientation == "+") 1 else 0
+      text(x = label_x, y = y_mid_abs, labels = label, adj = c(label_adj, 0.5),
+           cex = label_cex)
+    }
+  }
+
+  invisible()
+}
+
+
+
+
+
+
+# SeqTrack ----
 #' SeqTrack
 #' @name SeqTrack
 #' @description
@@ -1333,7 +1708,7 @@ setClass("SeqTrack",
 #' @param yTitle Character; title of the y-axis.
 #' @return A SeqTrack object.
 #' @export
-SeqTrack <- function(featureList, secondaryAxis = FALSE, xAxis = FALSE, yAxis = TRUE, yTitle = "", trackBackgroundColor = "transparent", trackBorderColor = "transparent", windowBackgroundColor = "transparent", windowBorderColor = "grey50") {
+SeqTrack <- function(featureList, secondaryAxis = FALSE, xAxis = FALSE, yAxis = TRUE, yTitle = "", trackBackgroundColor = "transparent", trackBorderColor = "transparent", windowBackgroundColor = "transparent", windowBorderColor = "grey50", fixedStubs = T) {
   # valid_classes <- c("SeqFeature", "SeqPoint", "SeqSegment", "SeqBar", "SeqLink", "SeqAnnotation", "SeqIdeogram")
   #
   # if (!all(sapply(featureList, function(x) class(x)[1] %in% valid_classes))) {
@@ -1374,7 +1749,8 @@ SeqTrack <- function(featureList, secondaryAxis = FALSE, xAxis = FALSE, yAxis = 
       trackBackgroundColor = trackBackgroundColor,
       trackBorderColor = trackBorderColor,
       windowBackgroundColor = windowBackgroundColor,
-      windowBorderColor = windowBorderColor)
+      windowBorderColor = windowBorderColor,
+      fixedStubs = fixedStubs)
 }
 
 
@@ -1515,16 +1891,24 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
   for (track_idx in seq_len(totalTracks)) {
     track <- sp@tracks[[track_idx]]
     # Compute track-level y range from features
-    track_y_vals <- unlist(lapply(track@features, function(sf) {
-      if (is(sf, "SeqElement")) {
-        yvals <- c(sf@y0, sf@y1)
-        yvals[is.infinite(yvals)] <- NA
-        if (class(sf) %in% c("SeqArch")) {
-          yvals <- c(yvals, sf@height)
-        }
-        return(yvals)
-      }
-    }))
+track_y_vals <- unlist(lapply(track@features, function(sf) {
+  if (is(sf, "SeqElement")) {
+    yvals <- c(sf@y0, sf@y1)
+    yvals[is.infinite(yvals)] <- NA
+    if (class(sf) %in% c("SeqArch")) {
+      yvals <- c(yvals, sf@height)
+    }
+    return(yvals)
+  }
+
+  # Add fallback y-range for AnnoGene features
+  if (inherits(sf, "AnnoGene")) {
+    return(c(0, 1))  # Default vertical extent for gene annotations
+  }
+
+  return(NULL)
+}))
+
 
 
     if (length(track_y_vals) == 0) {
@@ -1550,7 +1934,15 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
 
     # Loop over annotation features
     for (sf in track@features) {
-      if (is(sf, "AnnoFeature")) {
+      if (inherits(sf, "AnnoGene")) {
+        drawAnnoGene(sf,
+                     layout = layout_info,
+                     track_idx = track_idx,
+                     track_y_min = track_y_min,
+                     track_y_max = track_y_max,
+                     totalTracks = length(sp@tracks))
+
+      } else if (is(sf, "AnnoFeature")) {
 
         gr <- sf@gr
         ov <- findOverlaps(gr, layout_info$global_windows, select = "first")
@@ -1699,9 +2091,9 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
 
         # Labels
         text(x0, this_track_bottom - tick_length - 2, labels = paste0(round(scaled_start, 1), " ", unit_label),
-             cex = label_cex, srt = 90, adj = c(1, 0.5))
+             cex = label_cex, srt = 90, adj = c(1, 1))
         text(x1, this_track_bottom - tick_length - 2, labels = paste0(round(scaled_end, 1), " ", unit_label),
-             cex = label_cex, srt = 90, adj = c(1, 0.5))
+             cex = label_cex, srt = 90, adj = c(1, 0))
         text((x0 + x1) / 2, this_track_bottom - tick_length - 2, labels = chrom,
              cex = label_cex, pos = 1)
       }
@@ -1744,105 +2136,173 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
       # Use findOverlaps to map endpoints to windows
       ov1 <- findOverlaps(sf@gr1, global_windows)
       ov2 <- findOverlaps(sf@gr2, global_windows)
-      valid_links <- intersect(queryHits(ov1), queryHits(ov2))
-      if (length(valid_links) == 0) next
+      N <- length(sf@gr1)
+      ov1 <- findOverlaps(sf@gr1, global_windows, select = "first")
+      ov2 <- findOverlaps(sf@gr2, global_windows, select = "first")
 
-      for (i in valid_links) {
-        w0 <- subjectHits(ov1)[queryHits(ov1) == i][1]
-        w1 <- subjectHits(ov2)[queryHits(ov2) == i][1]
-        if (is.na(w0) || is.na(w1)) next
+      for (i in seq_len(N)) {
+        visible_start <- !is.na(ov1[i])
+        visible_end   <- !is.na(ov2[i])
+
+        if (!visible_start && !visible_end) next  # completely off screen — skip
 
         pt1 <- sf@gr1[i]
         pt2 <- sf@gr2[i]
-        x0_abs <- globalTransformX(start(pt1), w0, layout_info)
-        x1_abs <- globalTransformX(start(pt2), w1, layout_info)
 
-        # Determine track indices for endpoints using t0/t1; default to current track if not set.
+        x0_abs <- if (visible_start) globalTransformX(start(pt1), ov1[i], layout_info) else NA
+        x1_abs <- if (visible_end)   globalTransformX(start(pt2), ov2[i], layout_info) else NA
+
         track_index_0 <- if (!is.na(sf@t0[i]) && sf@t0[i] != 0) sf@t0[i] else track_idx
         track_index_1 <- if (!is.na(sf@t1[i]) && sf@t1[i] != 0) sf@t1[i] else track_idx
 
-        # For arcs, if y0 and y1 are provided, use them; otherwise, default to the track's relative midpoint (0.5)
         y0_val <- sf@y0[i]
         y1_val <- sf@y1[i]
-        if (!is.na(y0_val)) {
-          y0_abs <- globalTransformY(y0_val, track_index_0, layout_info,
-                                     track_y_min = rep(track_y_min, totalTracks),
-                                     track_y_max = rep(track_y_max, totalTracks))
-        } else {
-          y0_abs <- (global_track_bottom <- layout_info$global_track_bottoms)[track_index_0] +
-            0.5 * (layout_info$global_track_tops[track_index_0] - global_track_bottom[track_index_0])
-        }
-        if (!is.na(y1_val)) {
-          y1_abs <- globalTransformY(y1_val, track_index_1, layout_info,
-                                     track_y_min = rep(track_y_min, totalTracks),
-                                     track_y_max = rep(track_y_max, totalTracks))
-        } else {
-          y1_abs <- (global_track_bottom <- layout_info$global_track_bottoms)[track_index_1] +
-            0.5 * (layout_info$global_track_tops[track_index_1] - global_track_bottom[track_index_1])
+
+        y0_abs <- if (!is.na(y0_val) && visible_start) globalTransformY(y0_val, track_index_0, layout_info,
+                                                                        track_y_min = rep(track_y_min, totalTracks),
+                                                                        track_y_max = rep(track_y_max, totalTracks)) else NA
+
+        y1_abs <- if (!is.na(y1_val) && visible_end) globalTransformY(y1_val, track_index_1, layout_info,
+                                                                      track_y_min = rep(track_y_min, totalTracks),
+                                                                      track_y_max = rep(track_y_max, totalTracks)) else NA
+
+        # Top positions for SeqArch types
+        if (inherits(sf, "SeqArch") || inherits(sf, "SeqRecon")) {
+          height <- sf@height[i]
+          top0_abs <- if (visible_start) globalTransformY(height, track_idx, layout_info,
+                                                          track_y_min = rep(track_y_min, totalTracks),
+                                                          track_y_max = rep(track_y_max, totalTracks)) else NA
+          top1_abs <- if (visible_end) globalTransformY(height, track_idx, layout_info,
+                                                        track_y_min = rep(track_y_min, totalTracks),
+                                                        track_y_max = rep(track_y_max, totalTracks)) else NA
         }
 
-        # Retrieve the link's type and draw accordingly.
-        if (inherits(sf, "SeqLine")) {
+        # Dispatch drawing
+        if (inherits(sf, "SeqRecon")) {
+          if (visible_start && visible_end) {
+            drawSeqArch(
+              x0 = x0_abs, y0 = y0_abs,
+              x1 = x1_abs, y1 = y1_abs,
+              top0 = top0_abs, top1 = top1_abs,
+              orientation = sf@orientation[i],
+              curve = sf@curve[i],
+              col = sf@color[i],
+              lwd = 1.2
+            )
+          } else if (visible_start && !visible_end) {
+            track_top <- layout_info$global_track_tops[track_idx]
+            drawLinkStub(
+              x = x0_abs,
+              y = y0_abs,
+              direction = "right",
+              layout = layout_info,
+              track_idx = track_idx,
+              height = sf@height[i],
+              fixedStubs = track@fixedStubs,
+              track_y_min = track_y_min,
+              track_y_max = track_y_max,
+              col = sf@color[i],
+              lwd = 1.2
+            )
+
+          } else if (!visible_start && visible_end) {
+            track_top <- layout_info$global_track_tops[track_idx]
+            drawLinkStub(
+              x = x1_abs,
+              y = y1_abs,
+              direction = "left",
+              layout = layout_info,
+              track_idx = track_idx,
+              height = sf@height[i],
+              fixedStubs = track@fixedStubs,
+              track_y_min = track_y_min,
+              track_y_max = track_y_max,
+              col = sf@color[i],
+              lwd = 1.2
+            )
+          }
+        } else if (inherits(sf, "SeqLine")) {
           segments(x0_abs, y0_abs, x1_abs, y1_abs, col = sf@color[i], lwd = 1.2)
 
         } else if (inherits(sf, "SeqArc")) {
           orientation <- if (!is.na(sf@orientation[i])) sf@orientation[i] else "*"
           drawArc(x0_abs, y0_abs, x1_abs, y1_abs, orientation, col = sf@color[i], lwd = 1.2)
 
-        } else if (is(sf, "SeqArch")) {
+        } else if (is(sf, "SeqArch") && !is(sf, "SeqRecon")) {
           arch_height <- sf@height[i]
           arch_orientation <- if (!is.na(sf@orientation[i])) sf@orientation[i] else "*"
 
-          # Base of vertical lines (track-specific)
           track_index_0 <- if (!is.na(sf@t0[i]) && sf@t0[i] != 0) sf@t0[i] else track_idx
           track_index_1 <- if (!is.na(sf@t1[i]) && sf@t1[i] != 0) sf@t1[i] else track_idx
+
+          # Overlap detection for gr1/gr2
+          visible_start <- !is.na(ov1[i])
+          visible_end   <- !is.na(ov2[i])
+
+          x0_abs <- if (visible_start) globalTransformX(start(sf@gr1[i]), ov1[i], layout_info) else NA
+          x1_abs <- if (visible_end)   globalTransformX(start(sf@gr2[i]), ov2[i], layout_info) else NA
 
           y0_val <- sf@y0[i]
           y1_val <- sf@y1[i]
 
-          y0_abs <- globalTransformY(y0_val, track_index_0, layout_info,
-                                     track_y_min = rep(0, totalTracks),
-                                     track_y_max = rep(1, totalTracks))
+          y0_abs <- if (visible_start) globalTransformY(y0_val, track_index_0, layout_info,
+                                                        track_y_min = rep(0, totalTracks),
+                                                        track_y_max = rep(1, totalTracks)) else NA
 
-          y1_abs <- globalTransformY(y1_val, track_index_1, layout_info,
-                                     track_y_min = rep(0, totalTracks),
-                                     track_y_max = rep(1, totalTracks))
+          y1_abs <- if (visible_end) globalTransformY(y1_val, track_index_1, layout_info,
+                                                      track_y_min = rep(0, totalTracks),
+                                                      track_y_max = rep(1, totalTracks)) else NA
 
-          # Top of vertical lines (original track) -
-          arch_height <- sf@height[i]
+          top0_abs <- if (visible_start) globalTransformY(arch_height, track_idx, layout_info,
+                                                          track_y_min = rep(track_y_min, totalTracks),
+                                                          track_y_max = rep(track_y_max, totalTracks)) else NA
 
-          top0_abs <- globalTransformY(arch_height, track_idx, layout_info,
-                                       track_y_min = rep(track_y_min, totalTracks),
-                                       track_y_max = rep(track_y_max, totalTracks))
+          top1_abs <- if (visible_end) globalTransformY(arch_height, track_idx, layout_info,
+                                                        track_y_min = rep(track_y_min, totalTracks),
+                                                        track_y_max = rep(track_y_max, totalTracks)) else NA
 
-          top1_abs <- globalTransformY(arch_height, track_idx, layout_info,
-                                       track_y_min = rep(track_y_min, totalTracks),
-                                       track_y_max = rep(track_y_max, totalTracks))
+          if (visible_start && visible_end) {
+            drawSeqArch(
+              x0 = x0_abs, y0 = y0_abs,
+              x1 = x1_abs, y1 = y1_abs,
+              top0 = top0_abs, top1 = top1_abs,
+              orientation = sf@orientation[i],
+              curve = sf@curve[i],
+              col = sf@color[i],
+              lwd = 1.2
+            )
+          } else if (visible_start && !visible_end) {
+            drawLinkStub(
+              x = x0_abs,
+              y = y0_abs,
+              direction = "right",
+              layout = layout_info,
+              track_idx = track_idx,
+              height = sf@height[i],
+              fixedStubs = track@fixedStubs,
+              track_y_min = track_y_min,
+              track_y_max = track_y_max,
+              col = sf@color[i],
+              lwd = 1.2
+            )
 
-          drawSeqArch(
-            x0 = x0_abs,
-            y0 = y0_abs,  # base of left stem (in t0)
-            x1 = x1_abs,
-            y1 = y1_abs,  # base of right stem (in t1)
-            top0 = top0_abs,  # top of left stem (in current track)
-            top1 = top1_abs,  # top of right stem (in current track)
-            orientation = sf@orientation[i],
-            curve = sf@curve[i],
-            col = sf@color[i],
-            lwd = 1.2
-          )
-
-        } else if (is(sf, "SeqRecon")) {
-          drawSeqArch(
-            x0 = x0_abs, y0 = y0_abs,
-            x1 = x1_abs, y1 = y1_abs,
-            top0 = top0_abs, top1 = top1_abs,
-            orientation = sf@orientation[i],
-            curve = sf@curve[i],
-            col = sf@color[i],
-            lwd = 1.2
-          )
-        } else if (is(sf, "SeqString")) {
+          } else if (!visible_start && visible_end) {
+            drawLinkStub(
+              x = x1_abs,
+              y = y1_abs,
+              direction = "left",
+              layout = layout_info,
+              track_idx = track_idx,
+              height = sf@height[i],
+              fixedStubs = track@fixedStubs,
+              track_y_min = track_y_min,
+              track_y_max = track_y_max,
+              col = sf@color[i],
+              lwd = 1.2
+            )
+          }
+        }
+        else if (is(sf, "SeqString")) {
           drawSeqString(
             x0 = x0_abs, y0 = y0_abs,
             x1 = x1_abs, y1 = y1_abs,
@@ -1880,16 +2340,17 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
 # TODO - [X] SeqLink - Arc
 # TODO - [X] SeqLink - Arch (optional height argument for y maximum, differs from arch in that it is bounded by vertical lines and added height functionality)
 # TODO - [/] SeqLink - ReCon (Special arch that separates types of rearrangements. Based on doi.org/10.1093/bioinformatics/btad719. Places inversions on one track and dup/del on another.
-      # Still need to add proper tier lines.
+       # - [ ]  Still need to add proper tier lines.
 # TODO - [/] SeqLink - String (optional height argument for y maximum)
 # TODO - [ ] SeqLink - Barbell (intended to visualize paired reads)
 # TODO - [ ] SeqLink - Band (for synteny-like connections)
-# TODO - [ ] Plot 'stubs' of data whose partner is outside the plotting window.
+# TODO - [/] Plot 'stubs' of data whose partner is outside the plotting window.
+       # - [ ] Still need to fix stubbed SeqArch height scaling and add stubs to SeqStrings
 
 # SeqAnnotations
 # TODO - [X] SeqAnnotation - Ideogram
 # TODO - [X] SeqAnnotation - Feature (generic box or arrow marker)
-# TODO - [ ] SeqAnnotation - Genes/Exons/UTR/ETC...
+# TODO - [X] SeqAnnotation - Genes/Exons/UTR/ETC...
 # TODO - [ ] SeqAnnotation - Transcripts
 # TODO - [ ] SeqAnnotation - Enhancers
 # TODO - [ ] SeqAnnotation - Legend
@@ -1903,6 +2364,7 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
 # TODO - [ ] Add functionality for customWindows at the Seq Track level. I.e., not all tracks have the same windows.
 # TODO - [ ] Individual track and window gap control
 # TODO - [ ] Fix Y axis scaling. Track currently scales to maximum Y even when maximum Y is not in provided windows.
+# TODO - [ ] Convenience function to quickly generate GRanges windows using syntax c("1:100-200", "X:500-800", "TP53", "1p31.1") with padding.
 
 # Aesthetics
 # TODO - [ ] SeqPlot-level aesthetic control of tracks and windows that defers to track-level changes to default.
