@@ -476,7 +476,8 @@ drawLinkStub <- function(x, y, direction = "right",
   }
 
   # 1. Vertical stem
-  segments(x, y, x, y_top, col = col, lwd = lwd)
+  #segments(x, y, x, y_top, col = col, lwd = lwd)
+  segments(x, y, x, y_top, col = "grey80", lwd = lwd)
 
   # 2. Hook (45° curve)
   n <- 20
@@ -490,7 +491,7 @@ drawLinkStub <- function(x, y, direction = "right",
   }
 
 
-  lines(cx, cy, col = col, lwd = lwd)
+  lines(cx, cy, col = "grey80", lwd = lwd)
   #arrows(tail(cx, 1), tail(cy, 1), tail(cx, 1) + ifelse(direction == "right", 5, -5), tail(cy, 1), length = 0.05, col = col, lwd = lwd)
 }
 
@@ -1319,7 +1320,9 @@ setClass("SeqTrack",
     features = "list",      # A list of SeqFeature objects
     seqWindows = "GRanges", # Derived genomic windows for each seqname (from input data)
     secondaryAxis = "logical",  # Whether a second y-axis is used
-    xAxis = "logical",      # Whether to draw an x-axis (default FALSE)
+    xAxisLine = "logical",      # Whether to draw an x-axis (default FALSE)
+    xAxisText = "logical",     # Whether to draw x-axis text (default FALSE)
+    xAxisTitle = "logical", # Whether to draw x-axis titles (default FALSE)
     yAxis = "logical",      # Whether to draw a y-axis (default TRUE)
     yTitle = "character",    # Y-axis title
     trackBackgroundColor = "character",
@@ -1674,7 +1677,7 @@ drawAnnoGene <- function(ag, layout, track_idx,
 #' @param yTitle Character; title of the y-axis.
 #' @return A SeqTrack object.
 #' @export
-SeqTrack <- function(featureList, secondaryAxis = FALSE, xAxis = FALSE, yAxis = TRUE, yTitle = "", trackBackgroundColor = "transparent", trackBorderColor = "transparent", windowBackgroundColor = "transparent", windowBorderColor = "grey50", fixedStubs = T) {
+SeqTrack <- function(featureList, secondaryAxis = FALSE, xAxisLine = FALSE, xAxisText = FALSE, xAxisTitle = FALSE, yAxis = TRUE, yTitle = "", trackBackgroundColor = "transparent", trackBorderColor = "transparent", windowBackgroundColor = "transparent", windowBorderColor = "grey50", fixedStubs = T) {
   # valid_classes <- c("SeqFeature", "SeqPoint", "SeqSegment", "SeqBar", "SeqLink", "SeqAnnotation", "SeqIdeogram")
   #
   # if (!all(sapply(featureList, function(x) class(x)[1] %in% valid_classes))) {
@@ -1709,7 +1712,9 @@ SeqTrack <- function(featureList, secondaryAxis = FALSE, xAxis = FALSE, yAxis = 
       features = featureList,
       seqWindows = unlist(grWindows),
       secondaryAxis = secondaryAxis,
-      xAxis = xAxis,
+      xAxisLine = xAxisLine,
+      xAxisText = xAxisText,
+      xAxisTitle = xAxisTitle,
       yAxis = yAxis,
       yTitle = yTitle,
       trackBackgroundColor = trackBackgroundColor,
@@ -2031,7 +2036,6 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
     if (length(box_x0) > 0) rect(box_x0, box_y0, box_x1, box_y1, col = box_col, border = NA)
 
     # Draw x-axis below each window if enabled for the track
-    if (track@xAxis) {
       for (win_idx in seq_len(length(layout_info$global_windows))) {
         x0 <- layout_info$global_window_starts[win_idx]
         x1 <- layout_info$global_window_ends[win_idx]
@@ -2056,18 +2060,23 @@ setMethod("plotSeqPlot", "SeqPlot", function(sp, globalWindows = NULL, windowOrd
         label_cex <- 0.75
         axis_col <- "black"
 
+      if (track@xAxisLine) {
         # X-axis line and ticks
         segments(x0, this_track_bottom, x1, this_track_bottom, col = axis_col)
         segments(x0, this_track_bottom, x0, this_track_bottom - tick_length, col = axis_col)
         segments(x1, this_track_bottom, x1, this_track_bottom - tick_length, col = axis_col)
+      }
 
+      if (track@xAxisText) {
         # Labels
         text(x0, this_track_bottom - tick_length - 2, labels = paste0(round(scaled_start, 1), " ", unit_label),
              cex = label_cex, srt = 90, adj = c(1, 1))
         text(x1, this_track_bottom - tick_length - 2, labels = paste0(round(scaled_end, 1), " ", unit_label),
              cex = label_cex, srt = 90, adj = c(1, 0))
-        text((x0 + x1) / 2, this_track_bottom - tick_length - 2, labels = chrom,
-             cex = label_cex, pos = 1)
+      }
+
+      if (track@xAxisTitle) {
+        text((x0 + x1) / 2, this_track_bottom - tick_length - 2, labels = chrom, cex = label_cex, pos = 1)
       }
     }
 
