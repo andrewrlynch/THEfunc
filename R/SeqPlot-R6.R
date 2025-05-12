@@ -233,8 +233,8 @@ CreateSequenceWindows <- function(regions, padding = 0, genome = "hg38", add_chr
     )
 
     default_ranges <- defaultGenomeWindows(add_chr = F)
-    chr_df$start <- start(default_ranges)[match(chr_df$chrom, seqnames(default_ranges))]
-    chr_df$end   <- end(default_ranges)[match(chr_df$chrom, seqnames(default_ranges))]
+    chr_df$start <- start(default_ranges)[match(chr_df$chrom, as.character(seqnames(default_ranges)))]
+    chr_df$end   <- end(default_ranges)[match(chr_df$chrom, as.character(seqnames(default_ranges)))]
 
     parsed <- rbind(parsed, chr_df)
   }
@@ -2644,128 +2644,5 @@ SeqPlot <- R6Class("SeqPlot",
 
 
 
-################################################################################!
-################################################################################!
-################################################################################!
-gtf_path <- "/Users/arlynch/Downloads/gencode.v47.basic.annotation.gtf"
-gtf <- getGencode(path = gtf_path)
 
-
-cnas.gr.grouped = rbind(as.data.frame(cnas.gr), as.data.frame(cnas.gr), as.data.frame(cnas.gr))
-cnas.gr.grouped$group = c(rep(1, length(cnas.gr)), rep(2, length(cnas.gr)), rep(3, length(cnas.gr)))
-cnas.gr.grouped = makeGRangesFromDataFrame(cnas.gr.grouped, keep.extra.columns = T)
-
-#testWindows = CreateSequenceWindows(c("chr1:1-240000000", "chr17:1-70000000"))
-#mcols(testWindows)$scale = c(1e-6, 1e-6)
-testPoint = SeqPoint$new(snvs.gr, yCol = "AF", aesthetics = list(color = "#AF3029", size = 0.2))
-#testSeg = SeqSegment$new(cnas.gr, yCol = "tumorCopyNumber")
-#testRect = SeqRect$new(cnas.gr, yCol = "tumorCopyNumber")
-#testBar = SeqBar$new(cnas.gr, yCol = "tumorCopyNumber", aesthetics = list(col = "transparent"))
-#testBarGroup = SeqBar$new(cnas.gr.grouped, yCol = "tumorCopyNumber", groupCol = "group", aesthetics = list(col = "transparent", lwd = 0.1))
-#testLine = SeqLine$new(cnas.gr, yCol = "tumorCopyNumber", aesthetics = list(type = "s"))
-#testFill = SeqArea$new(cnas.gr, yCol = "tumorCopyNumber", aesthetics = list(col = "transparent"))
-#testFillGroup = SeqArea$new(cnas.gr.grouped, yCol = "tumorCopyNumber", groupCol = "group", aesthetics = list(col = "transparent", lwd = 0.1))
-testArch = SeqArch$new(gr1 = sv.bed@first, gr2 = sv.bed@second, orientation = "+", yCol = "QUAL", curve = "length", t0 = 2, t1 = 2, aesthetics = list(stemWidth = 1, arcWidth = 1, stemColor = "#000000", arcColor = "#000000"))
-recon <- SeqRecon$new(gr1 = sv.bed@first, gr2 = sv.bed@second, t0 = 2, t1 = 2, aesthetics = list(plotStubs = T))
-cytoData <- loadCytobands()
-cyto <- makeGRangesFromDataFrame(cytoData, seqnames.field   = "chrom",
-                                 start.field      = "chromStart",
-                                 end.field        = "chromEnd",
-                                 keep.extra.columns = TRUE
-)
-ideo = SeqIdeogram$new(cyto)
-
-stripSegData <- data.frame(chr = c("chr21", "chr1"), start = c(100, 100), end = c(10000000, 10000000))
-stripSegData <- makeGRangesFromDataFrame(stripSegData)
-stripSeg <- SeqSegment$new(stripSegData, yCol = "LOH", aesthetics = list(fill = "deepskyblue3", col = "deepskyblue3", lwd = 5))
-
-anno <- SeqGene$new(
-  gtf,
-  geneCol     = "gene_name",
-  genesFilter = c("TP53","EGFR", "ATRX", "TERT", "MDM2", "CDK4"),
-  strandCol   = "strand",
-  color       = "#6F6B58"
-)
-
-
-customWindows = CreateSequenceWindows(c("chr1", "chr12", "chr17"), add_chr = T)
-#mcols(customWindows)$scale = c(1e-6, 1e-4)
-ideoTrack = SeqTrack$new(list(ideo), windows = customWindows, aesthetics = list(xAxisTitle = T, xAxisLabels = F, xAxisLine = F, xAxisTicks = F, yAxisLine = F, yAxisTicks = F, yAxisLabels = F))
-testTrackBar = SeqTrack$new(list(testBar), windows = customWindows, aesthetics = list(yAxisTitleText = "MajCN", xAxisTitle = F, xAxisLabels = F, xAxisLine = F, xAxisTicks = F))
-#testTrackBarGroup = SeqTrack$new(list(testBarGroup), windows = customWindows, aesthetics = list(yAxisTitle = NA))
-#testTrackRect = SeqTrack$new(list(testRect), windows = customWindows, aesthetics = list(yAxisTitle = NA))
-testTrackSeg = SeqTrack$new(list(testSeg), windows = customWindows, aesthetics = list(yAxisTitle = NA))
-#testTrackLine = SeqTrack$new(list(testLine), windows = customWindows, aesthetics = list(yAxisTitle = NA))
-#testTrackFill = SeqTrack$new(list(testFill), windows = customWindows, aesthetics = list(yAxisTitleText = "MajCN"))
-#testTrackFillGroup = SeqTrack$new(list(testFillGroup), windows = customWindows, aesthetics = list(yAxisTitle = NA))
-testTrackPoint2 = SeqTrack$new(list(testPoint), windows = customWindows, aesthetics = list(xAxisLabels = F, xAxisTicks = F, xAxisLine = F, xAxisTitle = F))
-testTrackArch = SeqTrack$new(list(testArch), windows = customWindows, aesthetics = list(xAxisTitle = F, xAxisLabels = F, xAxisLine = F, xAxisTicks = F, yAxisLine = F, yAxisTicks = F, yAxisLabels = F))
-reconTrack <- SeqTrack$new(list(recon), windows = customWindows, aesthetics = list(xAxisTitle = F, xAxisLabels = T, xAxisLine = F, xAxisTicks = F, yAxisLine = F, yAxisTicks = F, yAxisLabels = F))
-stripTrack <- SeqTrack$new(list(stripSeg), windows = customWindows, aesthetics = list(xAxisTitle = F, xAxisLabels = T, xAxisLine = F, xAxisTicks = F, yAxisLine = F, yAxisTicks = F, yAxisLabels = F))
-geneTrack <- SeqTrack$new(list(anno), windows = customWindows, aesthetics = list(yAxisTitle=F, yAxisLine = F, yAxisLabels = F, yAxisTicks = F, xAxisLine = F, xAxisTicks = F, xAxisLabels = F, xAxisTitle = F))
-
-
-testPlot = SeqPlot$new(list(reconTrack, testTrackSeg, testTrackPoint2, geneTrack, ideoTrack),
-                       aesthetics = list(
-                         windowBackground = "transparent",
-                         windowBorder = "transparent",
-                         margins = list(top = 0.1, right = 0.05, bottom = 0.1, left = 0.1),
-                         trackGaps = c(0.05, 0.05, 0.05, 0.05),
-                         trackHeights = c(1, 1, 1, 0.5, 0.1)
-                       ))
-testPlot$layoutGrid()
-testPlot$drawGrid()
-testPlot$drawAxes()
-testPlot$drawElements()
-
-
-
-
-gr.chr  = function(gr){
-  if (grepl('^chr', seqlevels(gr)[1]) == FALSE){
-    seqlevels(gr) = gsub(seqlevels(gr),
-                         pattern = "^([0-9,X, Y, M,x,y,m, Un, {EBV}]+)",
-                         replacement = "chr\\1")
-  }
-  return(gr)
-}
-
-rose = read.table("/Users/arlynch/Downloads/UPS_RIS_812-T11_ROSE.txt", header = T, sep = "\t")
-seg = read.table("/Users/arlynch/Downloads/UPS_RIS_812-T11_Segments.txt", header = T, sep = "\t")
-
-for(c in unique(rose$cluster)){
-  gr.seg  = sort(makeGRangesFromDataFrame(seg, seqnames.field = "chr", start.field = "start", end.field = "end", keep.extra.columns = T))
-  gr1.rose = makeGRangesFromDataFrame(rose[rose$cluster == c,], seqnames.field = "sChr5", start.field = "sStart5", end.field = "sEnd5", keep.extra.columns = T)
-  gr2.rose = makeGRangesFromDataFrame(rose[rose$cluster == c,], seqnames.field = "sChr3", start.field = "sStart3", end.field = "sEnd3")
-  gr1.rose$minP_recip <- 1-gr1.rose$minP
-  gr1.rose = gr.chr(gr1.rose)
-  gr2.rose = gr.chr(gr2.rose)
-  gr.seg = gr.chr(gr.seg)
-
-  ymin = min(gr.seg$cn)
-
-  arch1.rose = SeqArch$new(gr1.rose, gr2.rose, yCol = "minP_recip", t0 = 3, t1 = 3, y0 = ymin, y1 = ymin, aesthetics = list(stemColor = "#AF3029", arcColor = "#AF3029"))
-  seg1.rose = SeqSegment$new(gr.seg, yCol = "cn")
-  arch2.rose = SeqArch$new(gr1.rose, gr2.rose, yCol = "minP_recip", t0 = 0, t1 = 0, y0 = ymin, y1 = ymin, aesthetics = list(stemColor = "#AF3029", arcColor = "#AF3029"))
-
-  customWindows = CreateSequenceWindows(c("chrX", "chr12", "chr17"), add_chr = T)
-  customWindowsZoom = CreateSequenceWindows(c("chr12:55000000-65000000"), add_chr = F)
-
-  track.rose2 = SeqTrack$new(list(arch2.rose), windows = customWindowsZoom, aesthetics = list(xAxisLabels = F, xAxisTitle = F, xAxisTicks = F, xAxisLine = F, windowBackground = "whitesmoke", windowBorder = NA, yAxisTitleText = "Rearrangement Order"))
-  track.rose = SeqTrack$new(list(arch1.rose), windows = customWindows, aesthetics = list(xAxisLabels = F, xAxisTitle = F, xAxisTicks = F, xAxisLine = F, windowBackground = "whitesmoke", windowBorder = NA, yAxisTitleText = "Frac. copies w/ junction"))
-  track.seg = SeqTrack$new(list(seg1.rose), windows = customWindows, aesthetics = list(xAxisLabels = F, xAxisTitle = F, xAxisTicks = F, xAxisLine = F, windowBackground = "whitesmoke", windowBorder = NA, yAxisTitleText = "Copy Number"))
-  geneTrack = SeqTrack$new(list(anno), windows = customWindows, aesthetics = list(yAxisTitle=F, yAxisLine = F, yAxisLabels = F, yAxisTicks = F, xAxisLine = F, xAxisTicks = F, xAxisLabels = F, xAxisTitle = F, windowBackground = NA, windowBorder = NA))
-  track.ideo = SeqTrack$new(list(ideo), windows = customWindows, aesthetics = list(xAxisTitle = T, xAxisLabels = F, xAxisLine = F, xAxisTicks = F, yAxisLine = F, yAxisTicks = F, yAxisLabels = F, windowBackground = NA, windowBorder = NA))
-
-  plot.rose = SeqPlot$new(list(track.rose2, track.rose, track.seg, geneTrack, track.ideo), aesthetics = list(
-    margins = list(top = 0.1, right = 0.05, bottom = 0.1, left = 0.1),
-    trackHeights = c(1,1,1,0.2,0.1),
-    trackGaps = c(0.1,0.05,0.05,0.05)
-  ))
-
-  plot.rose$layoutGrid()
-  plot.rose$drawGrid()
-  plot.rose$drawAxes()
-  plot.rose$drawElements()
-}
 
