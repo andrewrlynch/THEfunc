@@ -265,55 +265,6 @@ CreateSequenceWindows <- function(regions, padding = 0, genome = "hg38", add_chr
 
 
 
-# Grid Drawing ----
-# plotDataInWindow <- function(panel_meta, data, pch = 16, col = "red", cex = 1) {
-#   # Convert native (x,y) data to fractional (u,v) based on panel's xscale/yscale
-#   pts <- t(apply(data, 1, function(pt) {
-#     uv <- convertDataToGrid(pt[1], pt[2], panel_meta$xscale, panel_meta$yscale)
-#     gridToCanvas(uv[1], uv[2], panel_meta)
-#   }))
-#
-#   grid.points(x = unit(pts[,1], "npc"),
-#               y = unit(pts[,2], "npc"),
-#               pch = pch, gp = gpar(col = col, cex = cex))
-# }
-
-
-
-# drawConnection <- function(from_track, from_window, from_data,
-#                            to_track, to_window, to_data,
-#                            layout, gp = gpar(col = "red", lwd = 2)) {
-#   from_meta <- layout[[from_track]][[from_window]]
-#   to_meta   <- layout[[to_track]][[to_window]]
-#
-#   uv1 <- convertDataToGrid(from_data[1], from_data[2],
-#                            from_meta$xscale, from_meta$yscale)
-#   uv2 <- convertDataToGrid(to_data[1], to_data[2],
-#                            to_meta$xscale, to_meta$yscale)
-#
-#   p1 <- gridToCanvas(uv1[1], uv1[2], from_meta)
-#   p2 <- gridToCanvas(uv2[1], uv2[2], to_meta)
-#
-#   grid.lines(x = unit(c(p1[1], p2[1]), "npc"),
-#              y = unit(c(p1[2], p2[2]), "npc"),
-#              gp = gp)
-# }
-
-#
-# plotSeqElement <- function(sp, track, window, data, ...) {
-#   panel_meta <- sp@layout[[track]][[window]]
-#   plotDataInWindow(panel_meta, data, ...)
-# }
-
-#drawSeqLink <- function(sp, from_track, from_window, from_data,
-#                        to_track, to_window, to_data, ...) {
-#  drawConnection(from_track, from_window, from_data,
-#                 to_track, to_window, to_data,
-#                 layout = sp@layout, ...)
-#}
-
-
-
 #' drawSeqArch
 #'
 #' General function for drawing SeqLink arches
@@ -1268,24 +1219,21 @@ SeqArch <- R6::R6Class("SeqArch",
                            for (tid in unique(t0)) {
                              idxs <- which(t0 == tid)
                              ov_matches <- findOverlaps(self$gr1[idxs], track_windows_list[[tid]], select = "all")
-                             #print(ov_matches)
                              if (length(ov_matches) > 0) {
                                matched_q <- idxs[queryHits(ov_matches)]
                                matched_s <- subjectHits(ov_matches)
                                ov1_all[matched_q] <- matched_s
-                               #print(self$gr1[!is.na(ov1_all)])
                              }
                            }
 
                            for (tid in unique(t1)) {
                              idxs <- which(t1 == tid)
                              ov_matches <- findOverlaps(self$gr2[idxs], track_windows_list[[tid]], select = "all")
-                             #print(ov_matches)
+
                              if (length(ov_matches) > 0) {
                                matched_q <- idxs[queryHits(ov_matches)]
                                matched_s <- subjectHits(ov_matches)
                                ov2_all[matched_q] <- matched_s
-                               #print(self$gr2[!is.na(ov2_all)])
                              }
                            }
 
@@ -2095,11 +2043,12 @@ SeqTrack <- R6Class("SeqTrack",
                       aesthetics = list(
                         xAxisTitle = TRUE,
                         yAxisTitle = TRUE,
-                        yAxisTitleText = NULL
+                        yAxisTitleText = NULL,
+                        yAxisLimits = NULL
                       ),
 
                       initialize = function(elements = list(), windows = NULL, aesthetics = list(
-                        xAxisTitle = TRUE, yAxisTitle = TRUE, yAxisTitleText = NULL
+                        xAxisTitle = TRUE, yAxisTitle = TRUE, yAxisTitleText = NULL, yAxisLimits = NULL
                       )) {
                         self$elements <- elements
                         self$windows <- windows
@@ -2125,7 +2074,8 @@ SeqPlot <- R6Class("SeqPlot",
                        trackHeights = 1, trackGaps = 0.01, windowGaps = 0.01, margins = list(top = 0.05, right = 0.05, bottom = 0.05, left = 0.05),
                        trackBackground = NA, trackBorder = NA, windowBackground = "whitesmoke", windowBorder = "grey50",
                        xAxisLine = TRUE, yAxisLine = TRUE, xAxisBreakLines = FALSE, yAxisBreakLines = FALSE, xAxisTicks = TRUE, yAxisTicks = TRUE,
-                       xAxisLabels = TRUE, yAxisLabels = TRUE, xAxisLabelRotation = 0, xAxisLabelVerticalJust = 1, xAxisLabelHorizontalJust = 0.5, xAxisTitle = TRUE, yAxisTitle = TRUE),
+                       xAxisLabels = TRUE, yAxisLabels = TRUE, xAxisLabelRotation = 0, xAxisLabelVerticalJust = 1, xAxisLabelHorizontalJust = 0.5,
+                       xAxisTitle = TRUE, yAxisTitle = TRUE),
 
                      initialize = function(tracks = list(), windows = defaultGenomeWindows(), layout = NULL, aesthetics = list()) {
                        self$tracks <- tracks
@@ -2135,7 +2085,6 @@ SeqPlot <- R6Class("SeqPlot",
                      },
 
                      layoutGrid = function() {
-
                        for (i in seq_along(self$tracks)) {
                          if (is.null(self$tracks[[i]]$windows)) {
                            if(is.null(self$windows)) {stop("Global SeqPlot windows and at least one SeqTrack windows are NULL. All track windows must be set.")}
@@ -2179,6 +2128,7 @@ SeqPlot <- R6Class("SeqPlot",
                          rel_widths <- effective_widths / sum(effective_widths)
                          return(rel_widths)
                        })
+
                        xscales <- unlist(lapply(self$tracks, function(t) {
                          lapply(seq_along(t$windows), function(i) {
                            c(start(t$windows)[i], end(t$windows)[i])
@@ -2191,6 +2141,11 @@ SeqPlot <- R6Class("SeqPlot",
                          track <- self$tracks[[track_idx]]
                          disjoint <- isTRUE(track$aesthetics$disjointYScale)
                          n_windows <- length(track$windows)
+
+                         if (!is.null(track$aesthetics$yAxisLimits)){
+                           y_vals <- track$aesthetics$yAxisLimits
+                           next
+                         }
 
                          if (disjoint) {
                            for (w in seq_len(n_windows)) {
@@ -2638,11 +2593,3 @@ SeqPlot <- R6Class("SeqPlot",
                      }
 
                    ))
-
-
-
-
-
-
-
-
