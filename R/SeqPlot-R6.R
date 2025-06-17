@@ -545,7 +545,7 @@ SeqSegment <- R6::R6Class("SeqSegment",
                                   x1 = unit(coords$x1, "npc"),
                                   y0 = unit(coords$y0, "npc"),
                                   y1 = unit(coords$y1, "npc"),
-                                  gp = gpar(col = self$aesthetics$col, lwd = self$aesthetics$lwd, lineend = 1)
+                                  gp = gpar(col = self$aesthetics$col, lwd = self$aesthetics$lwd, lineend = 'butt')
                                 )
                               }
                             }
@@ -846,7 +846,11 @@ SeqBar <- R6::R6Class("SeqBar",
                             ytop <- p$inner$y0 + v1 * (p$inner$y1 - p$inner$y0)
 
                             # Lookup fill color for each group
-                            fill_colors <- self$aesthetics$fillPalette[as.character(df$group)]
+                            if(!is.null(self$aesthetics$fill)){
+                              fill_colors <- self$aesthetics$fill
+                            } else {
+                              fill_colors <- self$aesthetics$fillPalette[as.character(df$group)]
+                            }
 
                             # Store as data.frame to preserve fill column
                             self$coordCanvas[[w]] <- data.frame(
@@ -1449,6 +1453,7 @@ SeqRecon <- R6::R6Class("SeqRecon",
                           col_dup = NULL,
                           col_del = NULL,
                           col_trans = NULL,
+                          drawClasses = c("Inversion", "Dup/Del", "Translocation"),
 
                           arc_track_idx     = NULL,
                           layout_all_tracks = NULL,
@@ -1457,16 +1462,18 @@ SeqRecon <- R6::R6Class("SeqRecon",
 
                           initialize = function(gr1, gr2,
                                                 yCol = NULL,
+                                                y0 = 0, y1 = 0,
                                                 t0 = 0, t1 = 0,
                                                 orientation = "*",
                                                 curve = "length",
+                                                drawClasses = c("Inversion", "Dup/Del", "Translocation"),
                                                 aesthetics = list()) {
 
-                            self$col_h2h   <- aesthetics$h2hColor   %||% flexoki400[3]
-                            self$col_t2t   <- aesthetics$t2tColor   %||% flexoki400[4]
-                            self$col_dup   <- aesthetics$dupColor   %||% flexoki400[1]
-                            self$col_del   <- aesthetics$delColor   %||% flexoki400[2]
-                            self$col_trans <- aesthetics$transColor %||% flexoki400[9]
+                            self$col_h2h   <- aesthetics$h2hColor   %||% flexoki_palette(9)[3]
+                            self$col_t2t   <- aesthetics$t2tColor   %||% flexoki_palette(9)[4]
+                            self$col_dup   <- aesthetics$dupColor   %||% flexoki_palette(9)[1]
+                            self$col_del   <- aesthetics$delColor   %||% flexoki_palette(9)[2]
+                            self$col_trans <- aesthetics$transColor %||% flexoki_palette(9)[9]
 
                             super$initialize(
                               gr1        = gr1,
@@ -1481,6 +1488,8 @@ SeqRecon <- R6::R6Class("SeqRecon",
                               curve      = curve,
                               aesthetics = aesthetics
                             )
+
+                            self$aesthetics <- modifyList(self$aesthetics, list(drawClasses = self$drawClasses))
                           },
 
                           prep = function(layout_all_tracks, track_windows_list, arc_track_idx) {
@@ -1551,17 +1560,19 @@ SeqRecon <- R6::R6Class("SeqRecon",
                             ysc   <- panels[[1]]$yscale
 
                             # Class tiers
+                            drawClasses = self$drawClasses
+                            drawClasses = setNames(seq(0,1,1/((length(drawClasses)-1))), drawClasses)
                             classes <- list(
-                              Inversion    = list(mult=0, text="HH/TT",
+                              Inversion    = list(mult=drawClasses["Inversion"], text="HH/TT",
                                                   color = self$col_h2h),
-                              `Dup/Del`    = list(mult=0.5, text=c("DEL","DUP"),
+                              `Dup/Del`    = list(mult=drawClasses["Dup/Del"], text=c("DEL","DUP"),
                                                   color = self$col_del),
-                              Translocation= list(mult=1, text="TRA",
+                              Translocation= list(mult=drawClasses["Translocation"], text="TRA",
                                                   color = self$col_trans)
                             )
 
                             # Draw tiers
-                            for (cls in names(classes)) {
+                            for (cls in rev(names(drawClasses))) {
                               info <- classes[[cls]]
                               v_npc <- tb_y0 + (info$mult - ysc[1]) / diff(ysc) * (tb_y1 - tb_y0)
 
@@ -1578,7 +1589,7 @@ SeqRecon <- R6::R6Class("SeqRecon",
                                   x     = unit(tb_x0, "npc") - unit(2, "mm"),
                                   y     = unit(v_npc, "npc"),
                                   just  = "right",
-                                  gp    = gpar(col="grey40", cex=0.6)
+                                  gp    = gpar(col="grey40", cex=0.5)
                                 )
                               }
 
@@ -1587,18 +1598,18 @@ SeqRecon <- R6::R6Class("SeqRecon",
                                 # DEL
                                 grid.text(
                                   label = info$text[1],
-                                  x     = unit(tb_x0, "npc") - unit(2, "mm"),
-                                  y     = unit(v_npc, "npc") - unit(2, "mm"),
+                                  x     = unit(tb_x0, "npc") - unit(tb_x0*0.015, "npc"),
+                                  y     = unit(v_npc, "npc") - unit(v_npc*0.015, "npc"),
                                   just  = "right",
-                                  gp    = gpar(col = self$col_del, cex=0.6)
+                                  gp    = gpar(col = self$col_del, cex=0.5)
                                 )
                                 # DUP
                                 grid.text(
                                   label = info$text[2],
-                                  x     = unit(tb_x0, "npc") - unit(2, "mm"),
-                                  y     = unit(v_npc, "npc") + unit(2, "mm"),
+                                  x     = unit(tb_x0, "npc") - unit(tb_x0*0.015, "npc"),
+                                  y     = unit(v_npc, "npc") + unit(v_npc*0.015, "npc"),
                                   just  = "right",
-                                  gp    = gpar(col = self$col_dup, cex=0.6)
+                                  gp    = gpar(col = self$col_dup, cex=0.5)
                                 )
                               }
 
@@ -1606,25 +1617,27 @@ SeqRecon <- R6::R6Class("SeqRecon",
                               else if (cls == "Inversion") {
                                 # TT
                                 grid.text(
-                                  label = "t2tINV",
-                                  x     = unit(tb_x0, "npc") - unit(2, "mm"),
-                                  y     = unit(v_npc, "npc") - unit(2, "mm"),
+                                  label = "TT",
+                                  x     = unit(tb_x0, "npc") - unit(tb_x0*0.015, "npc"),
+                                  y     = unit(v_npc, "npc") - unit(v_npc*0.015, "npc"),
                                   just  = "right",
-                                  gp    = gpar(col = self$col_t2t, cex=0.6)
+                                  gp    = gpar(col = self$col_t2t, cex=0.5)
                                 )
                                 # HH
                                 grid.text(
-                                  label = "h2hINV",
-                                  x     = unit(tb_x0, "npc") - unit(2, "mm"),
-                                  y     = unit(v_npc, "npc") + unit(2, "mm"),
+                                  label = "HH",
+                                  x     = unit(tb_x0, "npc") - unit(tb_x0*0.015, "npc"),
+                                  y     = unit(v_npc, "npc") + unit(v_npc*0.015, "npc"),
                                   just  = "right",
-                                  gp    = gpar(col = self$col_h2h, cex=0.6)
+                                  gp    = gpar(col = self$col_h2h, cex=0.5)
                                 )
+                                super$draw()
+
                               }
                             }
 
                             # 5) lastly, draw the arches on top
-                            super$draw()
+                            #super$draw()
                           }
 
 
@@ -1752,11 +1765,6 @@ SeqIdeogram <- R6::R6Class("SeqIdeogram",
                              }
                            )
 )
-
-
-
-
-
 
 
 # SeqGene ----
@@ -1964,13 +1972,15 @@ SeqGene <- R6::R6Class("SeqGene",
                              x1b  <- sub$x1b[1]
 
                              # backbone
-                             grid.segments(
-                               x0 = unit(x0b,"npc"), y0 = unit(ym,"npc"),
-                               x1 = unit(x1b,"npc"), y1 = unit(ym,"npc"),
-                               gp = gpar(col=col, lwd=2, lineend="butt")
+                             grid.lines(
+                               #x0 = unit(x0b,"npc"), y0 = unit(ym,"npc"),
+                               #x1 = unit(x1b,"npc"), y1 = unit(ym,"npc"),
+                               x = unit(c(x0b, x1b), "npc"),
+                               y = unit(c(ym, ym), "npc"),
+                               gp = gpar(col=col, lwd=1, lineend="butt")
                              )
 
-                             spacing_npc <- 0.01  # 5% spacing in NPC units
+                             spacing_npc <- 0.02  # spacing in NPC units
                              arrow_len_npc <- 0  # arrow shaft length
 
                              x0 <- sub$x0b[1]
@@ -2013,7 +2023,7 @@ SeqGene <- R6::R6Class("SeqGene",
                                  y      = unit((sub$exon_y0[j]+sub$exon_y1[j])/2, "npc"),
                                  width  = unit(sub$exon_x1[j]-sub$exon_x0[j],     "npc"),
                                  height = unit(sub$exon_y1[j]-sub$exon_y0[j],     "npc"),
-                                 gp     = gpar(fill=col, col=col)
+                                 gp     = gpar(fill=col, col=NA)
                                )
                              }
 
@@ -2075,7 +2085,7 @@ SeqPlot <- R6Class("SeqPlot",
                        trackBackground = NA, trackBorder = NA, windowBackground = "whitesmoke", windowBorder = "grey50",
                        xAxisLine = TRUE, yAxisLine = TRUE, xAxisBreakLines = FALSE, yAxisBreakLines = FALSE, xAxisTicks = TRUE, yAxisTicks = TRUE,
                        xAxisLabels = TRUE, yAxisLabels = TRUE, xAxisLabelRotation = 0, xAxisLabelVerticalJust = 1, xAxisLabelHorizontalJust = 0.5,
-                       xAxisTitle = TRUE, yAxisTitle = TRUE),
+                       xAxisTitle = TRUE, yAxisTitle = TRUE, yAxisTitleRotation = 0, yAxisTitleVerticalJust = 0.5, yAxisTitleHorizontalJust = 1, yAxisPerWindow = FALSE),
 
                      initialize = function(tracks = list(), windows = defaultGenomeWindows(), layout = NULL, aesthetics = list()) {
                        self$tracks <- tracks
@@ -2142,12 +2152,26 @@ SeqPlot <- R6Class("SeqPlot",
                          disjoint <- isTRUE(track$aesthetics$disjointYScale)
                          n_windows <- length(track$windows)
 
-                         if (!is.null(track$aesthetics$yAxisLimits)){
-                           y_vals <- track$aesthetics$yAxisLimits
-                           next
-                         }
+                         if (!is.null(track$aesthetics$yAxisLimits)) {
+                           # Single limit (apply to all windows)
+                           if (is.numeric(track$aesthetics$yAxisLimits) &&
+                               length(track$aesthetics$yAxisLimits) == 2) {
+                             for (w in seq_len(n_windows)) {
+                               yscales[[length(yscales) + 1]] <- track$aesthetics$yAxisLimits
+                             }
+                             next
+                           }
 
-                         if (disjoint) {
+                           # Vector of per-window limits
+                           if (is.list(track$aesthetics$yAxisLimits) &&
+                               length(track$aesthetics$yAxisLimits) == n_windows) {
+                             for (w in seq_len(n_windows)) {
+                               lim <- track$aesthetics$yAxisLimits[[w]]
+                               yscales[[length(yscales) + 1]] <- if (length(lim) == 2) lim else c(0, 1)
+                             }
+                             next
+                           }
+                         } else if (disjoint) {
                            for (w in seq_len(n_windows)) {
                              win_gr <- track$windows[w]
                              y_vals <- c()
@@ -2441,16 +2465,17 @@ SeqPlot <- R6Class("SeqPlot",
                              grid.lines(
                                x = unit(c(p$x0, p$x1), "npc"),
                                y = unit(c(p$y0, p$y0), "npc"),
-                               gp = gpar(col = "#1C1B1A")
+                               gp = gpar(col = "#1C1B1A", lwd = 0.5)
                              )
                            }
 
                            # y‐axis along left of first panel
-                           if (isTRUE(trackAesthetics$yAxisLine && win$window == 1)) {
+                           if (isTRUE(trackAesthetics$yAxisLine) &&
+                               (isTRUE(trackAesthetics$yAxisPerWindow) || win$window == 1)) {
                              grid.lines(
                                x = unit(c(p$x0, p$x0), "npc"),
                                y = unit(c(p$y0, p$y1), "npc"),
-                               gp = gpar(col = "#1C1B1A")
+                               gp = gpar(col = "#1C1B1A", lwd = 0.5)
                              )
                            }
 
@@ -2478,7 +2503,7 @@ SeqPlot <- R6Class("SeqPlot",
                                grid.lines(
                                  x = unit(c(xpos, xpos), "npc"),
                                  y = unit(c(win$full$y0, win$full$y0 - 0.005), "npc"),
-                                 gp = gpar(col = "#1C1B1A")
+                                 gp = gpar(col = "#1C1B1A", lwd = 0.5)
                                )
 
                                if (isTRUE(trackAesthetics$xAxisLabels)) {
@@ -2498,7 +2523,8 @@ SeqPlot <- R6Class("SeqPlot",
                            }
 
                            # Draw y-axis ticks and labels
-                           if ((isTRUE(trackAesthetics$yAxisTicks)) && win$window == 1) {
+                           if (isTRUE(trackAesthetics$yAxisTicks) &&
+                               (isTRUE(trackAesthetics$yAxisPerWindow) || win$window == 1)) {
                              ybreaks <- yscale
                              ygrid   <- (ybreaks - yscale[1]) / diff(yscale)
                              for (i in seq_along(ygrid)) {
@@ -2506,7 +2532,7 @@ SeqPlot <- R6Class("SeqPlot",
                                grid.lines(
                                  x = unit(c(win$full$x0, win$full$x0 - 0.005), "npc"),
                                  y = unit(c(ypos, ypos), "npc"),
-                                 gp = gpar(col = "#1C1B1A")
+                                 gp = gpar(col = "#1C1B1A", lwd = 0.5)
                                )
 
                                if (isTRUE(trackAesthetics$yAxisLabels)) {
@@ -2549,7 +2575,9 @@ SeqPlot <- R6Class("SeqPlot",
                                x = unit(p$x0 - 0.03, "npc"),
                                y = unit((p$y0 + p$y1) / 2, "npc"),
                                just = "center",
-                               rot = 90,
+                               rot = trackAesthetics$yAxisTitleRotation,
+                               hjust = trackAesthetics$yAxisTitleHorizontalJust,
+                               vjust = trackAesthetics$yAxisTitleVerticalJust,
                                gp = gpar(cex = 0.6, fontface = "bold")
                              )
                            }
