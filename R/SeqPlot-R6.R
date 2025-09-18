@@ -1992,6 +1992,7 @@ SeqArch <- R6::R6Class("SeqArch",
 #' annotations. Each band is drawn as a rectangle, and centromeres
 #' (`acen` regions) are rendered as paired red triangles.
 #'
+#' @export
 SeqIdeogram <- R6::R6Class("SeqIdeogram",
                            inherit = SeqElement,
                            public = list(
