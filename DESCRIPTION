@@ -16,7 +16,10 @@ Depends:
     GenomicRanges(>= 1.30)
 Imports:
     VariantAnnotation,
-    StructuralVariantAnnotation
+    StructuralVariantAnnotation,
+    R6,
+    grid,
+    rtracklayer
 RoxygenNote: 7.3.2
 URL: https://github.com/andrewrlynch/THEfunc
 BugReports: https://github.com/andrewrlynch/THEfunc/issues
