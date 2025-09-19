@@ -55,29 +55,6 @@ getGencode <- function(genome = "hg38", version = "v32", path = NULL) {
 
 
 
-#' Load cytoband table for ideogram rendering
-#'
-#' This function loads a UCSC-style cytoband file for ideogram drawing.
-#' If no path is given, it loads the built-in cytoband_hg38 dataset from the package.
-#'
-#' @param path Optional path to a UCSC-style cytoband table (TSV format).
-#'
-#' @return A data.frame with cytoband annotations.
-#' @export
-loadCytobands <- function(path = NULL) {
-  if (is.null(path)) {
-    data("cytoband_hg38", package = "THEfunc", envir = environment())
-    return(cytoband_hg38)
-  } else {
-    return(read.table(
-      path, sep = "\t", header = FALSE, stringsAsFactors = FALSE,
-      col.names = c("chrom", "chromStart", "chromEnd", "name", "gieStain")
-    ))
-  }
-}
-
-
-
 #' Load colors from Kepano's Flexoki palette
 #'
 #' Loads colors from Kepano's Flexoki palette.
