@@ -400,6 +400,7 @@ SeqElement <- R6::R6Class("SeqElement",
 #' features, on a SeqPlot track. Each genomic range is drawn as a point,
 #' with optional y-axis values from metadata.
 #'
+#' @export
 SeqPoint <- R6::R6Class("SeqPoint",
                         inherit = SeqElement,
                         public = list(
@@ -3444,14 +3445,14 @@ SeqPlot <- R6Class("SeqPlot",
                        }
                      },
 
-                     #' Plot
-                     #' @description Full plotting pipeline in one call.
-                     #' Runs layoutGrid(), drawGrid(), drawAxes(), drawElements() in order.
-                     plot = function(...) {
-                       self$layoutGrid(...)
-                       self$drawGrid(...)
-                       self$drawAxes(...)
-                       self$drawElements(...)
+                     #' @description
+                     #' Prepares and draws all components of the SeqPlot.
+                     #' @return Renders elements to the graphics device.
+                     plot = function() {
+                       self$layoutGrid()
+                       self$drawGrid()
+                       self$drawAxes()
+                       self$drawElements()
                        invisible(self)
                      }
 
