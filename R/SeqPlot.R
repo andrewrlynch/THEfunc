@@ -1,7 +1,7 @@
 #library(grid)
 #library(R6)
 #library(GenomicRanges)
-library(rtracklayer)
+#library(rtracklayer)
 
 # Utilities ----
 
@@ -393,38 +393,85 @@ SeqElement <- R6::R6Class("SeqElement",
 
 
 # SeqPoint ----
+#' SeqPoint R6 Class
+#'
+#' @description
+#' An R6 class for plotting genomic points, such as SNPs or single-base
+#' features, on a SeqPlot track. Each genomic range is drawn as a point,
+#' with optional y-axis values from metadata.
+#'
 SeqPoint <- R6::R6Class("SeqPoint",
                         inherit = SeqElement,
                         public = list(
+
+                          #' @field gr A `GRanges` object containing the genomic positions
+                          #'   of the points and any associated metadata.
                           gr = NULL,
+
+                          #' @field y A numeric vector of y-values for each point. Defaults to
+                          #'   0.5 if no `yCol` is provided.
                           y = NULL,
+
+                          #' @field yCol Optional character string naming a metadata column in
+                          #'   `gr` that will be used for y-values.
                           yCol = NULL,
+
+                          #' @field coordOriginal A `GRanges` object storing the original,
+                          #'   unmodified genomic coordinates.
                           coordOriginal = NULL,
+
+                          #' @field coordCanvas A list of per-panel coordinate matrices
+                          #'   (x, y in canvas units) produced by `prep()`.
                           coordCanvas = NULL,
+
+                          #' @field aesthetics A list of plotting aesthetics for the points,
+                          #'   merged from user input and defaults.
                           aesthetics = NULL,
+
+                          #' @field defaultAesthetics Default aesthetics for points:
+                          #'   - `shape`: plotting symbol (default 16)
+                          #'   - `size`: point size scaling factor
+                          #'   - `color`: point color
                           defaultAesthetics = list(
                             shape = 16,
                             size = 0.1,
                             color = "#1C1B1A"
                           ),
 
+                          #' @description
+                          #' Create a new `SeqPoint` object.
+                          #' @param gr A `GRanges` object of point features.
+                          #' @param yCol Optional column in `gr` metadata to use as y-values.
+                          #' @param aesthetics A named list of aesthetics to override defaults
+                          #'   (`shape`, `size`, `color`).
+                          #' @return A new `SeqPoint` object.
+                          #' @examples
+                          #' gr <- GenomicRanges::GRanges("chr1", IRanges::IRanges(1:5, width = 1))
+                          #' pt <- SeqPoint$new(gr)
+                          #' pt$prep(layout_track, track_windows)
+                          #' pt$draw()
                           initialize = function(gr, yCol = NULL, aesthetics = list()) {
                             stopifnot(inherits(gr, "GRanges"))
                             self$gr <- gr
                             self$coordOriginal <- gr
                             self$yCol <- yCol
 
-                            # Handle Y column
                             if (!is.null(yCol) && yCol %in% names(mcols(gr))) {
                               self$y <- as.numeric(mcols(gr)[[yCol]])
                             } else {
                               self$y <- rep(0.5, length(gr))
                             }
 
-                            # Merge with default aesthetics
                             self$aesthetics <- modifyList(self$defaultAesthetics, aesthetics)
                           },
 
+                          #' @description
+                          #' Prepare the point coordinates for plotting in canvas space,
+                          #' transforming genomic ranges to per-panel grid coordinates.
+                          #' @param layout_track A list of panel metadata for the current track
+                          #'   from `SeqPlot$layoutGrid()`.
+                          #' @param track_windows A `GRanges` object defining the genomic
+                          #'   windows for the track.
                           prep = function(layout_track, track_windows) {
                             self$coordCanvas <- vector("list", length(track_windows))
 
@@ -459,6 +506,9 @@ SeqPoint <- R6::R6Class("SeqPoint",
                             invisible()
                           },
 
+                          #' @description
+                          #' Draw the points using grid graphics, applying aesthetics for
+                          #' shape, color, and size.
                           draw = function() {
                             if (is.null(self$coordCanvas)) return()
                             for (w in seq_along(self$coordCanvas)) {
@@ -474,6 +524,7 @@ SeqPoint <- R6::R6Class("SeqPoint",
                           }
                         )
 )
+
 
 
 
@@ -1775,215 +1826,6 @@ SeqArch <- R6::R6Class("SeqArch",
 
 
 
-
-
-
-# # SeqRecon ----
-# SeqRecon <- R6::R6Class("SeqRecon",
-#                         inherit = SeqArch,
-#                         public = list(
-#                           last_arc_track = NULL,
-#
-#                           # new color fields
-#                           col_h2h = NULL,
-#                           col_t2t = NULL,
-#                           col_dup = NULL,
-#                           col_del = NULL,
-#                           col_trans = NULL,
-#                           drawClasses = c("Inversion", "Dup/Del", "Translocation"),
-#
-#                           arc_track_idx     = NULL,
-#                           layout_all_tracks = NULL,
-#
-#                           tierMultipliers = NULL,
-#
-#                           initialize = function(gr1, gr2,
-#                                                 yCol = NULL,
-#                                                 y0 = 0, y1 = 0,
-#                                                 t0 = 0, t1 = 0,
-#                                                 orientation = "*",
-#                                                 curve = "length",
-#                                                 drawClasses = c("Inversion", "Dup/Del", "Translocation"),
-#                                                 aesthetics = list()) {
-#
-#                             self$col_h2h   <- aesthetics$h2hColor   %||% flexoki_palette(9)[3]
-#                             self$col_t2t   <- aesthetics$t2tColor   %||% flexoki_palette(9)[4]
-#                             self$col_dup   <- aesthetics$dupColor   %||% flexoki_palette(9)[1]
-#                             self$col_del   <- aesthetics$delColor   %||% flexoki_palette(9)[2]
-#                             self$col_trans <- aesthetics$transColor %||% flexoki_palette(9)[9]
-#
-#                             super$initialize(
-#                               gr1        = gr1,
-#                               gr2        = gr2,
-#                               t0         = t0,
-#                               t1         = t1,
-#                               y0         = 0,
-#                               y1         = 0,
-#                               yCol       = yCol,
-#                               orientation= orientation,
-#                               height     = 1,
-#                               curve      = curve,
-#                               aesthetics = aesthetics
-#                             )
-#
-#                             self$aesthetics <- modifyList(self$aesthetics, list(drawClasses = self$drawClasses))
-#                           },
-#
-#                           prep = function(layout_all_tracks, track_windows_list, arc_track_idx) {
-#                             self$last_arc_track <- layout_all_tracks[[arc_track_idx]]
-#
-#                             self$coordGrid <- NULL
-#
-#                             N    <- length(self$gr1)
-#                             seq1 <- as.character(seqnames(self$gr1))
-#                             seq2 <- as.character(seqnames(self$gr2))
-#
-#                             s1   <- ifelse(as.character(strand(self$gr1)) %in% c("+","-"),
-#                                            as.character(strand(self$gr1)), "+")
-#                             s2   <- ifelse(as.character(strand(self$gr2)) %in% c("+","-"),
-#                                            as.character(strand(self$gr2)), "+")
-#                             code <- paste0(s1, "/", s2)
-#
-#                             tier  <- numeric(N)
-#                             cols  <- character(N)
-#                             ori   <- character(N)
-#
-#                             t0 <- ifelse(self$t0 == 0, arc_track_idx, self$t0)
-#                             t1 <- ifelse(self$t1 == 0, arc_track_idx, self$t1)
-#
-#                             for (i in seq_len(N)) {
-#                               if (seq1[i] != seq2[i]) {
-#                                 tier[i] <- 1
-#                                 cols[i] <- self$col_trans
-#                                 ori[i]  <- code[i]
-#                               } else if (code[i] %in% c("+/+", "-/-")) {
-#                                 tier[i] <- 0
-#                                 cols[i] <- if (code[i] == "+/+") self$col_h2h else self$col_t2t
-#                                 ori[i]  <- ifelse(code[i] == "+/+", "+", "-")
-#                               } else if (code[i] %in% c("-/+", "+/-")) {
-#                                 tier[i] <- 0.5
-#                                 cols[i] <- if (code[i] == "-/+") self$col_dup else self$col_del
-#                                 ori[i]  <- ifelse(code[i] == "-/+", "+", "-")
-#                               } else {
-#                                 tier[i] <- 1
-#                                 cols[i] <- self$col_trans
-#                                 ori[i]  <- "+"
-#                               }
-#                             }
-#
-#                             self$tierMultipliers <- tier
-#                             self$orientation <- ori
-#                             self$height      <- tier
-#                             self$aesthetics$arcColor  <- cols
-#                             self$aesthetics$stemColor <- cols
-#                             self$layout_all_tracks <- layout_all_tracks
-#                             self$arc_track_idx     <- arc_track_idx
-#
-#                             super$prep(layout_all_tracks, track_windows_list, arc_track_idx)
-#                           },
-#
-#                           draw = function() {
-#                             # nothing to do if prep never ran
-#                             if (is.null(self$last_arc_track)) return()
-#
-#                             # 1) compute the NPC bbox of the entire recon‐track
-#                             panels <- self$last_arc_track
-#                             x0s <- vapply(panels, function(pm) pm$inner$x0, numeric(1))
-#                             x1s <- vapply(panels, function(pm) pm$inner$x1, numeric(1))
-#                             y0s <- vapply(panels, function(pm) pm$inner$y0, numeric(1))
-#                             y1s <- vapply(panels, function(pm) pm$inner$y1, numeric(1))
-#                             tb_x0 <- min(x0s); tb_x1 <- max(x1s)
-#                             tb_y0 <- min(y0s); tb_y1 <- max(y1s)
-#                             ysc   <- panels[[1]]$yscale
-#
-#                             # Class tiers
-#                             drawClasses = self$drawClasses
-#                             drawClasses = setNames(seq(0,1,1/((length(drawClasses)-1))), drawClasses)
-#                             classes <- list(
-#                               Inversion    = list(mult=drawClasses["Inversion"], text="HH/TT",
-#                                                   color = self$col_h2h),
-#                               `Dup/Del`    = list(mult=drawClasses["Dup/Del"], text=c("DEL","DUP"),
-#                                                   color = self$col_del),
-#                               Translocation= list(mult=drawClasses["Translocation"], text="TRA",
-#                                                   color = self$col_trans)
-#                             )
-#
-#                             # Draw tiers
-#                             for (cls in rev(names(drawClasses))) {
-#                               info <- classes[[cls]]
-#                               v_npc <- tb_y0 + (info$mult - ysc[1]) / diff(ysc) * (tb_y1 - tb_y0)
-#
-#                               grid.lines(
-#                                 x = unit(c(tb_x0, tb_x1), "npc"),
-#                                 y = unit(rep(v_npc, 2), "npc"),
-#                                 gp = gpar(col="grey40", lty=3, lwd = 0.5)
-#                               )
-#
-#                               # Top tier
-#                               if (cls == "Translocation") {
-#                                 grid.text(
-#                                   label = info$text,
-#                                   x     = unit(tb_x0, "npc") - unit(2, "mm"),
-#                                   y     = unit(v_npc, "npc"),
-#                                   just  = "right",
-#                                   gp    = gpar(col="grey40", cex=0.5)
-#                                 )
-#                               }
-#
-#                               # Middle tier
-#                               else if (cls == "Dup/Del") {
-#                                 # DEL
-#                                 grid.text(
-#                                   label = info$text[1],
-#                                   x     = unit(tb_x0, "npc") - unit(tb_x0*0.015, "npc"),
-#                                   y     = unit(v_npc, "npc") - unit(v_npc*0.015, "npc"),
-#                                   just  = "right",
-#                                   gp    = gpar(col = self$col_del, cex=0.5)
-#                                 )
-#                                 # DUP
-#                                 grid.text(
-#                                   label = info$text[2],
-#                                   x     = unit(tb_x0, "npc") - unit(tb_x0*0.015, "npc"),
-#                                   y     = unit(v_npc, "npc") + unit(v_npc*0.015, "npc"),
-#                                   just  = "right",
-#                                   gp    = gpar(col = self$col_dup, cex=0.5)
-#                                 )
-#                               }
-#
-#                               # Bottom tier
-#                               else if (cls == "Inversion") {
-#                                 # TT
-#                                 grid.text(
-#                                   label = "TT",
-#                                   x     = unit(tb_x0, "npc") - unit(tb_x0*0.015, "npc"),
-#                                   y     = unit(v_npc, "npc") - unit(v_npc*0.015, "npc"),
-#                                   just  = "right",
-#                                   gp    = gpar(col = self$col_t2t, cex=0.5)
-#                                 )
-#                                 # HH
-#                                 grid.text(
-#                                   label = "HH",
-#                                   x     = unit(tb_x0, "npc") - unit(tb_x0*0.015, "npc"),
-#                                   y     = unit(v_npc, "npc") + unit(v_npc*0.015, "npc"),
-#                                   just  = "right",
-#                                   gp    = gpar(col = self$col_h2h, cex=0.5)
-#                                 )
-#                                 super$draw()
-#
-#                               }
-#                             }
-#
-#                             # 5) lastly, draw the arches on top
-#                             #super$draw()
-#                           }
-#
-#
-#
-#                         )
-# )
-
-
-
 # SeqIdeogram ----
 #' SeqIdeogram R6 Class
 #'
@@ -2328,8 +2170,8 @@ SeqRecon <- R6::R6Class("SeqRecon",
                               if (cls == "Translocation") {
                                 grid.text(
                                   label = info$text,
-                                  x     = unit(tb_x0, "npc") - unit(2, "mm"),
-                                  y     = unit(v_npc, "npc"),
+                                  x     = unit(tb_x0, "npc")-unit(tb_x0*0.015,"npc"),
+                                  y     = unit(v_npc,"npc"),
                                   just  = "right",
                                   gp    = gpar(col="grey40", cex=0.5)
                                 )
@@ -2353,6 +2195,211 @@ SeqRecon <- R6::R6Class("SeqRecon",
                           }
                         )
 )
+
+
+
+# SeqRecon <- R6::R6Class("SeqRecon",
+#                         inherit = SeqArch,
+#                         public = list(
+#                           last_arc_track = NULL,
+#
+#                           # new color fields
+#                           col_h2h = NULL,
+#                           col_t2t = NULL,
+#                           col_dup = NULL,
+#                           col_del = NULL,
+#                           col_trans = NULL,
+#                           drawClasses = c("Inversion", "Dup/Del", "Translocation"),
+#
+#                           arc_track_idx     = NULL,
+#                           layout_all_tracks = NULL,
+#
+#                           tierMultipliers = NULL,
+#
+#                           initialize = function(gr1, gr2,
+#                                                 yCol = NULL,
+#                                                 y0 = 0, y1 = 0,
+#                                                 t0 = 0, t1 = 0,
+#                                                 orientation = "*",
+#                                                 curve = "length",
+#                                                 drawClasses = c("Inversion", "Dup/Del", "Translocation"),
+#                                                 aesthetics = list()) {
+#
+#                             self$col_h2h   <- aesthetics$h2hColor   %||% flexoki_palette(9)[3]
+#                             self$col_t2t   <- aesthetics$t2tColor   %||% flexoki_palette(9)[4]
+#                             self$col_dup   <- aesthetics$dupColor   %||% flexoki_palette(9)[1]
+#                             self$col_del   <- aesthetics$delColor   %||% flexoki_palette(9)[2]
+#                             self$col_trans <- aesthetics$transColor %||% flexoki_palette(9)[9]
+#
+#                             super$initialize(
+#                               gr1        = gr1,
+#                               gr2        = gr2,
+#                               t0         = t0,
+#                               t1         = t1,
+#                               y0         = 0,
+#                               y1         = 0,
+#                               yCol       = yCol,
+#                               orientation= orientation,
+#                               height     = 1,
+#                               curve      = curve,
+#                               aesthetics = aesthetics
+#                             )
+#
+#                             self$aesthetics <- modifyList(self$aesthetics, list(drawClasses = self$drawClasses))
+#                           },
+#
+#                           prep = function(layout_all_tracks, track_windows_list, arc_track_idx) {
+#                             self$last_arc_track <- layout_all_tracks[[arc_track_idx]]
+#
+#                             self$coordGrid <- NULL
+#
+#                             N    <- length(self$gr1)
+#                             seq1 <- as.character(seqnames(self$gr1))
+#                             seq2 <- as.character(seqnames(self$gr2))
+#
+#                             s1   <- ifelse(as.character(strand(self$gr1)) %in% c("+","-"),
+#                                            as.character(strand(self$gr1)), "+")
+#                             s2   <- ifelse(as.character(strand(self$gr2)) %in% c("+","-"),
+#                                            as.character(strand(self$gr2)), "+")
+#                             code <- paste0(s1, "/", s2)
+#
+#                             tier  <- numeric(N)
+#                             cols  <- character(N)
+#                             ori   <- character(N)
+#
+#                             t0 <- ifelse(self$t0 == 0, arc_track_idx, self$t0)
+#                             t1 <- ifelse(self$t1 == 0, arc_track_idx, self$t1)
+#
+#                             for (i in seq_len(N)) {
+#                               if (seq1[i] != seq2[i]) {
+#                                 tier[i] <- 1
+#                                 cols[i] <- self$col_trans
+#                                 ori[i]  <- code[i]
+#                               } else if (code[i] %in% c("+/+", "-/-")) {
+#                                 tier[i] <- 0
+#                                 cols[i] <- if (code[i] == "+/+") self$col_h2h else self$col_t2t
+#                                 ori[i]  <- ifelse(code[i] == "+/+", "+", "-")
+#                               } else if (code[i] %in% c("-/+", "+/-")) {
+#                                 tier[i] <- 0.5
+#                                 cols[i] <- if (code[i] == "-/+") self$col_dup else self$col_del
+#                                 ori[i]  <- ifelse(code[i] == "-/+", "+", "-")
+#                               } else {
+#                                 tier[i] <- 1
+#                                 cols[i] <- self$col_trans
+#                                 ori[i]  <- "+"
+#                               }
+#                             }
+#
+#                             self$tierMultipliers <- tier
+#                             self$orientation <- ori
+#                             self$height      <- tier
+#                             self$aesthetics$arcColor  <- cols
+#                             self$aesthetics$stemColor <- cols
+#                             self$layout_all_tracks <- layout_all_tracks
+#                             self$arc_track_idx     <- arc_track_idx
+#
+#                             super$prep(layout_all_tracks, track_windows_list, arc_track_idx)
+#                           },
+#
+#                           draw = function() {
+#                             # nothing to do if prep never ran
+#                             if (is.null(self$last_arc_track)) return()
+#
+#                             # 1) compute the NPC bbox of the entire recon‐track
+#                             panels <- self$last_arc_track
+#                             x0s <- vapply(panels, function(pm) pm$inner$x0, numeric(1))
+#                             x1s <- vapply(panels, function(pm) pm$inner$x1, numeric(1))
+#                             y0s <- vapply(panels, function(pm) pm$inner$y0, numeric(1))
+#                             y1s <- vapply(panels, function(pm) pm$inner$y1, numeric(1))
+#                             tb_x0 <- min(x0s); tb_x1 <- max(x1s)
+#                             tb_y0 <- min(y0s); tb_y1 <- max(y1s)
+#                             ysc   <- panels[[1]]$yscale
+#
+#                             # Class tiers
+#                             drawClasses = self$drawClasses
+#                             drawClasses = setNames(seq(0,1,1/((length(drawClasses)-1))), drawClasses)
+#                             classes <- list(
+#                               Inversion    = list(mult=drawClasses["Inversion"], text="HH/TT",
+#                                                   color = self$col_h2h),
+#                               `Dup/Del`    = list(mult=drawClasses["Dup/Del"], text=c("DEL","DUP"),
+#                                                   color = self$col_del),
+#                               Translocation= list(mult=drawClasses["Translocation"], text="TRA",
+#                                                   color = self$col_trans)
+#                             )
+#
+#                             # Draw tiers
+#                             for (cls in rev(names(drawClasses))) {
+#                               info <- classes[[cls]]
+#                               v_npc <- tb_y0 + (info$mult - ysc[1]) / diff(ysc) * (tb_y1 - tb_y0)
+#
+#                               grid.lines(
+#                                 x = unit(c(tb_x0, tb_x1), "npc"),
+#                                 y = unit(rep(v_npc, 2), "npc"),
+#                                 gp = gpar(col="grey40", lty=3, lwd = 0.5)
+#                               )
+#
+#                               # Top tier
+#                               if (cls == "Translocation") {
+#                                 grid.text(
+#                                   label = info$text,
+#                                   x     = unit(tb_x0, "npc") - unit(2, "mm"),
+#                                   y     = unit(v_npc, "npc"),
+#                                   just  = "right",
+#                                   gp    = gpar(col="grey40", cex=0.5)
+#                                 )
+#                               }
+#
+#                               # Middle tier
+#                               else if (cls == "Dup/Del") {
+#                                 # DEL
+#                                 grid.text(
+#                                   label = info$text[1],
+#                                   x     = unit(tb_x0, "npc") - unit(tb_x0*0.015, "npc"),
+#                                   y     = unit(v_npc, "npc") - unit(v_npc*0.015, "npc"),
+#                                   just  = "right",
+#                                   gp    = gpar(col = self$col_del, cex=0.5)
+#                                 )
+#                                 # DUP
+#                                 grid.text(
+#                                   label = info$text[2],
+#                                   x     = unit(tb_x0, "npc") - unit(tb_x0*0.015, "npc"),
+#                                   y     = unit(v_npc, "npc") + unit(v_npc*0.015, "npc"),
+#                                   just  = "right",
+#                                   gp    = gpar(col = self$col_dup, cex=0.5)
+#                                 )
+#                               }
+#
+#                               # Bottom tier
+#                               else if (cls == "Inversion") {
+#                                 # TT
+#                                 grid.text(
+#                                   label = "TT",
+#                                   x     = unit(tb_x0, "npc") - unit(tb_x0*0.015, "npc"),
+#                                   y     = unit(v_npc, "npc") - unit(v_npc*0.015, "npc"),
+#                                   just  = "right",
+#                                   gp    = gpar(col = self$col_t2t, cex=0.5)
+#                                 )
+#                                 # HH
+#                                 grid.text(
+#                                   label = "HH",
+#                                   x     = unit(tb_x0, "npc") - unit(tb_x0*0.015, "npc"),
+#                                   y     = unit(v_npc, "npc") + unit(v_npc*0.015, "npc"),
+#                                   just  = "right",
+#                                   gp    = gpar(col = self$col_h2h, cex=0.5)
+#                                 )
+#                                 super$draw()
+#
+#                               }
+#                             }
+#
+#                             # 5) lastly, draw the arches on top
+#                             #super$draw()
+#                           }
+#
+#
+#
+#                         )
+# )
 
 
 
@@ -2910,6 +2957,14 @@ SeqPlot <- R6Class("SeqPlot",
 
                        yscales <- list()
 
+                       # axis expansion
+                       #expandX <- if (!is.null(self$aesthetics$expandX)) self$aesthetics$expandX else c(0,0)
+                       #expandY <- if (!is.null(self$aesthetics$expandY)) self$aesthetics$expandY else c(0,0)
+
+                       #xscales <- lapply(xscales, expand_limits, expand = expandX)
+                       #yscales <- lapply(yscales, expand_limits, expand = expandY)
+
+
                        for (track_idx in seq_along(self$tracks)) {
                          track <- self$tracks[[track_idx]]
                          disjoint <- isTRUE(track$aesthetics$disjointYScale)
@@ -3387,8 +3442,29 @@ SeqPlot <- R6Class("SeqPlot",
                            }
                          }
                        }
+                     },
 
-
+                     #' Plot
+                     #' @description Full plotting pipeline in one call.
+                     #' Runs layoutGrid(), drawGrid(), drawAxes(), drawElements() in order.
+                     plot = function(...) {
+                       self$layoutGrid(...)
+                       self$drawGrid(...)
+                       self$drawAxes(...)
+                       self$drawElements(...)
+                       invisible(self)
                      }
 
                    ))
+
+
+##' expand_limits
+##' @description Expands axis limits around data
+# expand_limits <- function(lims, expand) {
+#   mult <- expand[1]
+#   add  <- expand[2]
+#   rng  <- diff(lims)
+#   c(lims[1] - rng * mult - add,
+#     lims[2] + rng * mult + add)
+# }
+#
