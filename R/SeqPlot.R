@@ -18,7 +18,7 @@ getGencode <- function(genome = "hg38", version = "v32", path = NULL) {
   # Load from Path if given
   if(!is.null(path)){
     gtf_path <- path
-    gtf <- import(gtf_path, format="gtf")
+    gtf <- rtracklayer::import(gtf_path, format="gtf")
     gtf <- keepSeqlevels(gtf, paste0("chr", c(1:22,"X","Y")), pruning.mode="coarse")
     return(gtf)
   } else {
@@ -394,6 +394,9 @@ SeqPoint <- R6::R6Class("SeqPoint",
                           #'   `gr` that will be used for y-values.
                           yCol = NULL,
 
+                          #' @field color Optional character string naming a metadata column in `gr` that will be used for color values.
+                          color = NULL,
+
                           #' @field coordOriginal A `GRanges` object storing the original,
                           #'   unmodified genomic coordinates.
                           coordOriginal = NULL,
@@ -401,6 +404,9 @@ SeqPoint <- R6::R6Class("SeqPoint",
                           #' @field coordCanvas A list of per-panel coordinate matrices
                           #'   (x, y in canvas units) produced by `prep()`.
                           coordCanvas = NULL,
+
+                          #' @field coordIndex A list of per-panel coordinate indices.
+                          coordIndex = NULL,
 
                           #' @field aesthetics A list of plotting aesthetics for the points,
                           #'   merged from user input and defaults.
@@ -412,8 +418,8 @@ SeqPoint <- R6::R6Class("SeqPoint",
                           #'   - `color`: point color
                           defaultAesthetics = list(
                             shape = 16,
-                            size = 0.1,
-                            color = "#1C1B1A"
+                            size = 0.1
+                            #color = "#1C1B1A"
                           ),
 
                           #' @description
@@ -428,7 +434,7 @@ SeqPoint <- R6::R6Class("SeqPoint",
                           #' pt <- SeqPoint$new(gr)
                           #' pt$prep(layout_track, track_windows)
                           #' pt$draw()
-                          initialize = function(gr, yCol = NULL, aesthetics = list()) {
+                          initialize = function(gr, yCol = NULL, color = NULL, aesthetics = list()) {
                             stopifnot(inherits(gr, "GRanges"))
                             self$gr <- gr
                             self$coordOriginal <- gr
@@ -440,7 +446,32 @@ SeqPoint <- R6::R6Class("SeqPoint",
                               self$y <- rep(0.5, length(gr))
                             }
 
-                            self$aesthetics <- modifyList(self$defaultAesthetics, aesthetics)
+                            n <- length(gr)
+
+                            if (!is.null(color) && is.character(color) && length(color) == 1 &&
+                                color %in% names(mcols(gr))) {
+                              # Mapping: column of gr
+                              color_vals <- as.character(mcols(gr)[[color]])
+                            } else if (!is.null(color) && length(color) == n) {
+                              # Mapping: explicit vector of colors
+                              color_vals <- as.character(color)
+                            } else {
+                              # No mapping provided → fill with NA for now
+                              color_vals <- rep(NA_character_, n)
+                            }
+
+                            # Merge with defaults and user aesthetics
+                            aes <- modifyList(self$defaultAesthetics, aesthetics)
+
+                            # Replace NA colors with fixed color if provided
+                            if ("color" %in% names(aes)) {
+                              idx_na <- is.na(color_vals)
+                              color_vals[idx_na] <- aes$color
+                            }
+
+                            # Save resolved aesthetics
+                            self$aesthetics <- aes
+                            self$aesthetics$color <- color_vals  # always a vector now
                           },
 
                           #' @description
@@ -479,6 +510,7 @@ SeqPoint <- R6::R6Class("SeqPoint",
                               y_canvas <- panel_meta$inner$y0 + v * (panel_meta$inner$y1 - panel_meta$inner$y0)
 
                               self$coordCanvas[[w]] <- cbind(x_canvas, y_canvas)
+                              self$coordIndex[[w]]  <- qh[sh == w]
                             }
 
                             invisible()
@@ -491,12 +523,15 @@ SeqPoint <- R6::R6Class("SeqPoint",
                             if (is.null(self$coordCanvas)) return()
                             for (w in seq_along(self$coordCanvas)) {
                               coords <- self$coordCanvas[[w]]
+                              idx <- self$coordIndex[[w]]
+                              col_vals <- self$aesthetics$color[idx]
+
                               if (is.null(coords)) next
                               grid.points(
                                 x = unit(coords[, 1], "npc"),
                                 y = unit(coords[, 2], "npc"),
                                 pch = self$aesthetics$shape,
-                                gp = gpar(col = self$aesthetics$color, cex = self$aesthetics$size)
+                                gp = gpar(col = self$aesthetics$color[idx], cex = self$aesthetics$size)
                               )
                             }
                           }
@@ -2205,12 +2240,23 @@ SeqIdeogram <- R6::R6Class("SeqIdeogram",
 
                                  stain <- mcols(bands)$gieStain
                                  fillCols <- sapply(stain, function(s) {
-                                   if (s == "gneg") "#FFFFFF"
+                                   if (s == "gneg") {
+                                     "#FFFFFF"
+                                     }
                                    else if (startsWith(s, "gpos")) {
-                                     pct <- as.numeric(sub("gpos", "", s)) / 100
+                                     pct <- 1-as.numeric(sub("gpos", "", s)) / 100
                                      grey(pct)
-                                   } else if (s == "acen") "#FF0000"
-                                   else "#CCCCCC"
+                                   } else if (s == "acen"){
+                                     "#FF0000"
+                                     }
+                                   else if (s == "stalk"){
+                                     "#7AC0CF"
+                                   }
+                                   else if (s == "gvar"){
+                                     "#CCF5FF"
+                                   } else {
+                                     "#CCCCCC"
+                                     }
                                  })
 
                                  non_acen <- stain != "acen"
@@ -3469,6 +3515,10 @@ SeqPlot <- R6Class("SeqPlot",
                          panelBounds = grid_meta,
                          trackBounds = trackBounds
                        )
+
+                       grid.newpage()
+                       pushViewport(viewport(name = "root"))
+                       popViewport()
                      },
 
                      #' @description
@@ -3478,9 +3528,6 @@ SeqPlot <- R6Class("SeqPlot",
                        stopifnot(is.list(self$layout),
                                  !is.null(self$layout$panelBounds),
                                  !is.null(self$layout$trackBounds))
-
-                       grid.newpage()
-                       pushViewport(viewport(name = "root"))
 
                        panelBounds      <- self$layout$panelBounds
                        trackBounds <- self$layout$trackBounds
@@ -3566,7 +3613,7 @@ SeqPlot <- R6Class("SeqPlot",
                          }
                        }
 
-                       popViewport()
+                       #popViewport()
                      },
 
                      #' @description
@@ -3592,7 +3639,7 @@ SeqPlot <- R6Class("SeqPlot",
                              grid.lines(
                                x = unit(c(p$x0, p$x1), "npc"),
                                y = unit(c(p$y0, p$y0), "npc"),
-                               gp = gpar(col = "#1C1B1A", lwd = 0.5)
+                               gp = gpar(col = "#1C1B1A", lwd = 1)
                              )
                            }
 
@@ -3602,7 +3649,7 @@ SeqPlot <- R6Class("SeqPlot",
                              grid.lines(
                                x = unit(c(p$x0, p$x0), "npc"),
                                y = unit(c(p$y0, p$y1), "npc"),
-                               gp = gpar(col = "#1C1B1A", lwd = 0.5)
+                               gp = gpar(col = "#1C1B1A", lwd = 1)
                              )
                            }
 
@@ -3630,7 +3677,7 @@ SeqPlot <- R6Class("SeqPlot",
                                grid.lines(
                                  x = unit(c(xpos, xpos), "npc"),
                                  y = unit(c(win$full$y0, win$full$y0 - 0.005), "npc"),
-                                 gp = gpar(col = "#1C1B1A", lwd = 0.5)
+                                 gp = gpar(col = "#1C1B1A", lwd = 1)
                                )
 
                                if (isTRUE(trackAesthetics$xAxisLabels)) {
@@ -3650,8 +3697,7 @@ SeqPlot <- R6Class("SeqPlot",
                            }
 
                            # Draw y-axis ticks and labels
-                           if (isTRUE(trackAesthetics$yAxisTicks) &&
-                               (isTRUE(trackAesthetics$yAxisPerWindow) || win$window == 1)) {
+                           if (isTRUE(trackAesthetics$yAxisTicks) && (isTRUE(trackAesthetics$yAxisPerWindow) || win$window == 1)) {
                              ybreaks <- yscale
                              ygrid   <- (ybreaks - yscale[1]) / diff(yscale)
                              for (i in seq_along(ygrid)) {
@@ -3659,7 +3705,7 @@ SeqPlot <- R6Class("SeqPlot",
                                grid.lines(
                                  x = unit(c(win$full$x0, win$full$x0 - 0.005), "npc"),
                                  y = unit(c(ypos, ypos), "npc"),
-                                 gp = gpar(col = "#1C1B1A", lwd = 0.5)
+                                 gp = gpar(col = "#1C1B1A", lwd = 1)
                                )
 
                                if (isTRUE(trackAesthetics$yAxisLabels)) {
