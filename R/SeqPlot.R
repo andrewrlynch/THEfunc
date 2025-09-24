@@ -868,122 +868,176 @@ SeqMatrix <- R6::R6Class("SeqMatrix",
 
 
 
-# SeqSegment ----
+# SeqSegment ---- (TODO: FIX)
 #' SeqSegment R6 Class
 #'
 #' @description
-#' R6 class for plotting line segments in the SeqPlot framework.
-#' Inherits from [SeqElement].
+#' R6 class for plotting line segments in the SeqPlot R6 framework.
+#' Segments represent features with genomic start–end ranges and y-values
+#' from metadata or defaults.
 #'
 #' @details
-#' The `SeqSegment` class represents genomic features drawn as horizontal
-#' or vertical line segments spanning ranges. It supports y-values from a
-#' single column (`yCol`) or separate start/end columns (`y0Col`, `y1Col`).
+#' The `SeqSegment` class inherits from [SeqElement] and draws horizontal or
+#' vertical line segments. Y-values can be supplied from a single column
+#' (`yCol`) or from separate start and end columns (`y0Col`, `y1Col`).
 #'
 #' @examples
-#' gr <- GenomicRanges::GRanges(
+#' library(GenomicRanges)
+#' gr <- GRanges(
 #'   "chr1",
-#'   IRanges::IRanges(c(1, 100), width = 50),
+#'   IRanges(c(1, 100), width = 50),
 #'   score = c(0.2, 0.8)
 #' )
 #' seg <- SeqSegment$new(gr, yCol = "score")
-#' seg$prep(layout_track = some_layout, track_windows = some_windows)
+#' seg$prep(layout_track = layout_info[[1]], track_windows = global_windows)
 #' seg$draw()
 #'
 #' @export
-SeqSegment <- R6::R6Class("SeqSegment",
-                          inherit = SeqElement,
-                          public = list(
+SeqSegment <- R6::R6Class(
+  "SeqSegment",
+  inherit = SeqElement,
+  public = list(
 
-                            #' @field gr A `GRanges` object containing genomic intervals.
-                            gr = NULL,
+    #' @field gr A `GRanges` object containing genomic intervals.
+    gr = NULL,
 
-                            #' @field y0 Numeric vector of lower y-values for segments.
-                            y0 = NULL,
+    #' @field y0 Numeric vector of lower y-values.
+    y0 = NULL,
 
-                            #' @field y1 Numeric vector of upper y-values for segments.
-                            y1 = NULL,
+    #' @field y1 Numeric vector of upper y-values.
+    y1 = NULL,
 
-                            #' @field yCol Optional metadata column used for both y0 and y1 values.
-                            yCol = NULL,
+    #' @field yCol Optional metadata column for both y0 and y1 values.
+    yCol = NULL,
 
-                            #' @field y0Col Optional metadata column used for lower y-values.
-                            y0Col = NULL,
+    #' @field y0Col Optional metadata column for lower y-values.
+    y0Col = NULL,
 
-                            #' @field y1Col Optional metadata column used for upper y-values.
-                            y1Col = NULL,
+    #' @field y1Col Optional metadata column for upper y-values.
+    y1Col = NULL,
 
-                            #' @field coordOriginal A `GRanges` object storing the unmodified input
-                            #'   coordinates.
-                            coordOriginal = NULL,
+    #' @field coordOriginal A `GRanges` object storing original input coordinates.
+    coordOriginal = NULL,
 
-                            #' @field coordCanvas A list of transformed segment coordinates
-                            #'   prepared for plotting.
-                            coordCanvas = NULL,
+    #' @field coordCanvas A list of transformed segment coordinates per window.
+    coordCanvas = NULL,
 
-                            #' @field aesthetics List of aesthetics merged with defaults.
-                            aesthetics = NULL,
+    #' @field aesthetics List of visual aesthetics.
+    aesthetics = NULL,
 
-                            #' @field defaultAesthetics Default aesthetics:
-                            #'   \code{lwd = 1.5}, \code{col = "#1C1B1A"}.
-                            defaultAesthetics = list(
-                              lwd = 1.5,
-                              col = "#1C1B1A"
-                            ),
+    #' @field defaultAesthetics Default values for aesthetics.
+    defaultAesthetics = list(
+      lwd = 1.5,
+      col = "#1C1B1A"
+    ),
 
-                            #' @description
-                            #' Create a new `SeqSegment` object.
-                            #' @param gr A `GRanges` object containing genomic intervals.
-                            #' @param yCol Optional column name in `gr` used for both y0 and y1.
-                            #' @param y0Col Optional column name in `gr` for lower y-values.
-                            #' @param y1Col Optional column name in `gr` for upper y-values.
-                            #' @param aesthetics Optional list of aesthetic overrides.
-                            #' @return A new `SeqSegment` object.
-                            initialize = function(gr, yCol = NULL, y0Col = NULL, y1Col = NULL,
-                                                  aesthetics = list()) {
-                              stopifnot(inherits(gr, "GRanges"))
-                              self$gr <- gr
-                              self$coordOriginal <- gr
-                              self$yCol <- yCol
-                              self$y0Col <- y0Col
-                              self$y1Col <- y1Col
+    #' @description
+    #' Create a new `SeqSegment` object.
+    #'
+    #' @param gr A `GRanges` object containing genomic intervals.
+    #' @param yCol Column name in `gr` for both y0 and y1 values (optional).
+    #' @param y0Col Column name in `gr` for lower y-values (optional).
+    #' @param y1Col Column name in `gr` for upper y-values (optional).
+    #' @param aesthetics Optional list of aesthetic overrides.
+    initialize = function(gr, yCol = NULL, y0Col = NULL, y1Col = NULL,
+                          aesthetics = list()) {
+      stopifnot(inherits(gr, "GRanges"))
+      self$gr <- gr
+      self$coordOriginal <- gr
+      self$yCol <- yCol
+      self$y0Col <- y0Col
+      self$y1Col <- y1Col
 
-                              if (!is.null(yCol) && yCol %in% names(mcols(gr))) {
-                                self$y0 <- self$y1 <- as.numeric(mcols(gr)[[yCol]])
-                              } else {
-                                if (!is.null(y0Col) && y0Col %in% names(mcols(gr))) {
-                                  self$y0 <- as.numeric(mcols(gr)[[y0Col]])
-                                } else {
-                                  self$y0 <- rep(0.5, length(gr))
-                                }
+      # Parse y-values
+      if (!is.null(yCol) && yCol %in% names(mcols(gr))) {
+        self$y0 <- self$y1 <- as.numeric(mcols(gr)[[yCol]])
+      } else {
+        if (!is.null(y0Col) && y0Col %in% names(mcols(gr))) {
+          self$y0 <- as.numeric(mcols(gr)[[y0Col]])
+        } else {
+          self$y0 <- rep(0.5, length(gr))
+        }
+        if (!is.null(y1Col) && y1Col %in% names(mcols(gr))) {
+          self$y1 <- as.numeric(mcols(gr)[[y1Col]])
+        } else {
+          self$y1 <- self$y0
+        }
+      }
 
-                                if (!is.null(y1Col) && y1Col %in% names(mcols(gr))) {
-                                  self$y1 <- as.numeric(mcols(gr)[[y1Col]])
-                                } else {
-                                  self$y1 <- self$y0
-                                }
-                              }
+      self$aesthetics <- modifyList(self$defaultAesthetics, aesthetics)
+    },
 
-                              self$aesthetics <- modifyList(self$defaultAesthetics, aesthetics)
-                            },
+    #' @description
+    #' Prepare segment coordinates by mapping genomic intervals into canvas space.
+    #'
+    #' @param layout_track Panel layout metadata (from grid layout).
+    #' @param track_windows Genomic windows (`GRanges`) for this track.
+    prep = function(layout_track, track_windows) {
+      self$coordCanvas <- vector("list", length(track_windows))
+      ov <- GenomicRanges::findOverlaps(self$gr, track_windows)
+      if (length(ov) == 0) return(invisible())
 
-                            #' @description
-                            #' Prepare segment coordinates by mapping genomic intervals into
-                            #' panel-relative canvas space.
-                            #' @param layout_track A list of panel layout metadata.
-                            #' @param track_windows A `GRanges` object of genomic windows.
-                            prep = function(layout_track, track_windows) {
-                              self$coordCanvas <- vector("list", length(track_windows))
-                              ...
-                            },
+      qh <- S4Vectors::queryHits(ov)
+      sh <- S4Vectors::subjectHits(ov)
 
-                            #' @description
-                            #' Draw line segments on the plotting canvas.
-                            draw = function() {
-                              ...
-                            }
-                          )
+      x0 <- start(self$gr)[qh]
+      x1 <- end(self$gr)[qh]
+      y0 <- self$y0[qh]
+      y1 <- self$y1[qh]
+
+      for (w in unique(sh)) {
+        mask <- sh == w
+        if (sum(mask) == 0) next
+        panel_meta <- layout_track[[w]]
+
+        u0 <- (x0[mask] - panel_meta$xscale[1]) / diff(panel_meta$xscale)
+        u1 <- (x1[mask] - panel_meta$xscale[1]) / diff(panel_meta$xscale)
+        v0 <- (y0[mask] - panel_meta$yscale[1]) / diff(panel_meta$yscale)
+        v1 <- (y1[mask] - panel_meta$yscale[1]) / diff(panel_meta$yscale)
+
+        u0 <- pmax(pmin(u0, 1), 0)
+        u1 <- pmax(pmin(u1, 1), 0)
+        v0 <- pmax(pmin(v0, 1), 0)
+        v1 <- pmax(pmin(v1, 1), 0)
+
+        x0_canvas <- panel_meta$inner$x0 + u0 * (panel_meta$inner$x1 - panel_meta$inner$x0)
+        x1_canvas <- panel_meta$inner$x0 + u1 * (panel_meta$inner$x1 - panel_meta$inner$x0)
+        y0_canvas <- panel_meta$inner$y0 + v0 * (panel_meta$inner$y1 - panel_meta$inner$y0)
+        y1_canvas <- panel_meta$inner$y0 + v1 * (panel_meta$inner$y1 - panel_meta$inner$y0)
+
+        self$coordCanvas[[w]] <- list(
+          x0 = x0_canvas,
+          x1 = x1_canvas,
+          y0 = y0_canvas,
+          y1 = y1_canvas
+        )
+      }
+      invisible()
+    },
+
+    #' @description
+    #' Draw line segments on the plotting canvas.
+    draw = function() {
+      if (is.null(self$coordCanvas)) return()
+      for (coords in self$coordCanvas) {
+        if (is.null(coords)) next
+        grid::grid.segments(
+          x0 = grid::unit(coords$x0, "npc"),
+          x1 = grid::unit(coords$x1, "npc"),
+          y0 = grid::unit(coords$y0, "npc"),
+          y1 = grid::unit(coords$y1, "npc"),
+          gp = grid::gpar(
+            fill = self$aesthetics$fill,
+            col = self$aesthetics$col,
+            lwd = self$aesthetics$lwd,
+            lineend = "butt"
+          )
+        )
+      }
+    }
+  )
 )
+
 
 
 
@@ -2877,11 +2931,12 @@ SeqGene <- R6::R6Class("SeqGene",
                              pm  <- panels[[w]]
                              win <- track_windows[w]
 
-                             ws <- start(win); we <- end(win)
-                             if (!identical(pm$xscale, c(ws, we))) {
+                             ws <- start(win)
+                             we <- end(win)
+                             if (!isTRUE(all.equal(pm$data_x, c(ws, we)))) {
                                stop(sprintf(
-                                 "Window #%d mismatch: pm$xscale = [%g, %g], but window = [%g, %g]",
-                                 w, pm$xscale[1], pm$xscale[2], ws, we
+                                 "Window #%d mismatch: pm$data_x = [%g, %g], but window = [%g, %g]",
+                                 w, pm$data_x[1], pm$data_x[2], ws, we
                                ))
                              }
 
@@ -3255,6 +3310,18 @@ SeqPlot <- R6Class("SeqPlot",
                      #' coordinates, track heights, and axis scales.
                      #' @return Updates the `layout` field.
                      layoutGrid = function() {
+
+                       .expand_limits <- function(r, expand) {
+                         r <- range(r, na.rm = TRUE)
+                         if (!all(is.finite(r))) r <- c(0, 1)
+                         if (r[1] == r[2]) r <- r + c(-0.5, 0.5)  # avoid zero-span
+                         span <- diff(r)
+                         mul  <- if (length(expand) >= 1) expand[1] else 0
+                         add  <- if (length(expand) >= 2) expand[2] else 0
+                         pad  <- mul * span + add
+                         list(data = r, expanded = c(r[1] - pad, r[2] + pad))
+                       }
+
                        for (i in seq_along(self$tracks)) {
                          if (is.null(self$tracks[[i]]$windows)) {
                            if(is.null(self$windows)) {stop("Global SeqPlot windows and at least one SeqTrack windows are NULL. All track windows must be set.")}
@@ -3299,11 +3366,11 @@ SeqPlot <- R6Class("SeqPlot",
                          return(rel_widths)
                        })
 
-                       xscales <- unlist(lapply(self$tracks, function(t) {
-                         lapply(seq_along(t$windows), function(i) {
-                           c(start(t$windows)[i], end(t$windows)[i])
-                         })
-                       }), recursive = FALSE)
+                       # xscales <- unlist(lapply(self$tracks, function(t) {
+                       #   lapply(seq_along(t$windows), function(i) {
+                       #     c(start(t$windows)[i], end(t$windows)[i])
+                       #   })
+                       # }), recursive = FALSE)
 
                        yscales <- list()
 
@@ -3460,6 +3527,11 @@ SeqPlot <- R6Class("SeqPlot",
 
                          availWinWidth <- availWidth - total_gap
                          winFrac <- windowWidths[[t]]
+
+                         expandX <- (self$tracks[[t]]$aesthetics$xExpand %||% self$aesthetics$xExpand) %||% c(0.05, 0)
+                         expandY <- (self$tracks[[t]]$aesthetics$yExpand %||% self$aesthetics$yExpand) %||% c(0.05, 0)
+
+
                          grid_meta[[t]] <- vector("list", nWin)
                          x_left <- margins$left
 
@@ -3475,16 +3547,26 @@ SeqPlot <- R6Class("SeqPlot",
                              y1 = y_top_track
                            )
 
-
                            track <- self$tracks[[t]]
+
+                           # --- NEW: compute per-window x data range and expand it
+                           x_data <- c(start(track$windows)[w], end(track$windows)[w])
+                           x_ex   <- .expand_limits(x_data, expandX)
+
+                           # --- NEW: take the precomputed yscale for this panel_index and expand it
+                           y_data <- yscales[[panel_index]]
+                           y_ex   <- .expand_limits(y_data, expandY)
 
                            grid_meta[[t]][[w]] <- list(
                              track  = t,
                              window = w,
                              full   = panel_full,
                              inner  = panel_full,
-                             xscale = xscales[[panel_index]],
-                             yscale = yscales[[panel_index]],
+                             # store both true ranges and expanded ranges
+                             data_x = x_ex$data,
+                             data_y = y_ex$data,
+                             xscale = x_ex$expanded,
+                             yscale = y_ex$expanded,
                              xScaleFactor = mcols(track$windows)$scale[[w]]
                            )
 
@@ -3494,6 +3576,7 @@ SeqPlot <- R6Class("SeqPlot",
 
                            panel_index <- panel_index + 1
                          }
+
 
                          y_top <- y_bottom_track - if (t == 1) 0 else trackGaps[t - 1]
                        }
@@ -3621,12 +3704,135 @@ SeqPlot <- R6Class("SeqPlot",
                      #' and axis titles.
                      #' @return Renders axes to the graphics device.
                      drawAxes = function() {
+
+                       # Helper functions
+                       # Null-coalescing convenience
+                       `%||%` <- function(a, b) if (!is.null(a)) a else b
+
+                       # Format unit label from scale factor
+                       .axis_unit_label <- function(sf) {
+                         if (abs(sf - 1e-6) < 1e-9) {
+                           "Mb"
+                         } else if (abs(sf - 1e-3) < 1e-9) {
+                           "kb"
+                         } else if (abs(sf - 1) < 1e-9) {
+                           "bp"
+                         } else {
+                           paste0("×", signif(sf, 2))
+                         }
+                       }
+
+                       # Format numbers with big marks and adaptive rounding
+                       .axis_format_num <- function(x, digits = NULL) {
+                         if (is.null(digits)) {
+                           rng <- diff(range(na.omit(x)))
+                           digits <- if (is.finite(rng)) {
+                             if (rng >= 100) 0 else if (rng >= 10) 1 else 2
+                           } else 0
+                         }
+                         format(round(x, digits), big.mark = ",", scientific = FALSE, trim = TRUE)
+                       }
+
+                       # Core axis metadata generator
+                       make_axis_meta <- function(plot_range,
+                                                  data_range = NULL,     # true genomic/data range
+                                                  manual_breaks = NULL,  # numeric or NULL
+                                                  n = 5,                 # target # of pretty breaks
+                                                  cap = c("full", "capped", "ticks"),
+                                                  labels = NULL,
+                                                  minor_breaks = NULL    # NULL, integer, or numeric
+                       ) {
+                         cap <- match.arg(cap)
+                         pr <- range(plot_range, na.rm = TRUE)  # already expanded
+                         dr <- if (!is.null(data_range)) range(data_range, na.rm = TRUE) else pr
+
+                         # --- major breaks ---
+                         br <- if (!is.null(manual_breaks)) {
+                           as.numeric(manual_breaks)
+                         } else {
+                           #pretty(pr, n = n)
+                           br_fun <- scales::pretty_breaks(n=n)
+                           br_fun(pr)
+                         }
+                         br <- br[is.finite(br) & br >= pr[1] & br <= pr[2]]
+
+                         # --- axis line range ---
+                         ar <- switch(cap,
+                                      full   = pr,
+                                      capped = if (length(br)) range(br) else pr,
+                                      ticks  = NULL)
+
+                         # --- major labels ---
+                         lab <- if (!is.null(labels)) labels else as.character(br)
+
+                         # --- minor breaks ---
+                         mbr <- NULL
+                         if (!is.null(minor_breaks)) {
+                           if (is.numeric(minor_breaks) && length(minor_breaks) > 1) {
+                             # explicit numeric vector
+                             mbr <- minor_breaks
+                           } else if (is.numeric(minor_breaks) && length(minor_breaks) == 1) {
+                             # evenly spaced subdivisions
+                             nb <- as.integer(minor_breaks)
+                             if (nb > 1 && length(br) > 1) {
+                               mids <- unlist(lapply(seq_along(br)[-length(br)], function(i) {
+                                 seq(br[i], br[i+1], length.out = nb + 1)[-c(1, nb+1)]
+                               }))
+                               mbr <- mids
+                             }
+                           }
+                           mbr <- mbr[is.finite(mbr) & mbr >= pr[1] & mbr <= pr[2]]
+                         }
+
+                         list(
+                           data_range   = dr,   # true data range (unexpanded)
+                           expand_range = pr,   # plotting range (expanded, from layoutGrid)
+                           breaks       = br,
+                           labels       = lab,
+                           minor_breaks = mbr,
+                           axis_range   = ar
+                         )
+                       }
+
+
+
                        panelBounds      <- self$layout$panelBounds
                        trackBounds <- self$layout$trackBounds
                        nTracks     <- length(panelBounds)
 
+                       defaults <- list(
+                         # expansion
+                         xExpand = c(0.025, 0),
+                         yExpand = c(0.05, 0),
+
+                         # major breaks
+                         xAxisBreaks = NULL, yAxisBreaks = NULL,
+                         xAxisNBreaks = 5,   yAxisNBreaks = 4,
+
+                         # minor breaks (NEW)
+                         xMinorBreaks = NULL,   # NULL (none), integer (# subdivisions), or numeric vector
+                         yMinorBreaks = NULL,
+
+                         # capping
+                         xAxisCap = "capped",
+                         yAxisCap = "capped",
+
+                         # styling
+                         tickLengthNPC = 0.005,
+                         xTitleOffsetNPC = 0.045,
+                         xLabelOffsetNPC = 0.015,
+                         yLabelOffsetNPC = 0.010,
+
+                         xAxisLabelRotation = 0,
+                         xAxisLabelHorizontalJust = 0.5,
+                         xAxisLabelVerticalJust   = 1
+                       )
+
                        for (t in seq_len(nTracks)) {
-                         trackAesthetics = modifyList(self$aesthetics, self$tracks[[t]]$aesthetics)
+                         trackAesthetics = modifyList(
+                           modifyList(defaults, self$aesthetics %||% list()),
+                           self$tracks[[t]]$aesthetics %||% list()
+                           )
 
                          # Draw window axes over the panel borders
                          for (win in panelBounds[[t]]) {
@@ -3634,60 +3840,84 @@ SeqPlot <- R6Class("SeqPlot",
                            yscale <- win$yscale
                            p <- win$full
 
+                           # axis metadata
+                           x_meta <- make_axis_meta(
+                             plot_range   = win$xscale,
+                             data_range   = win$data_x,
+                             manual_breaks= trackAesthetics$xAxisBreaks,
+                             n            = trackAesthetics$xAxisNBreaks,
+                             cap          = trackAesthetics$xAxisCap,
+                             minor_breaks = trackAesthetics$xMinorBreaks
+                           )
+
+                           y_meta <- make_axis_meta(
+                             plot_range   = win$yscale,
+                             data_range   = win$data_y,
+                             manual_breaks= trackAesthetics$yAxisBreaks,
+                             n            = trackAesthetics$yAxisNBreaks,
+                             cap          = trackAesthetics$yAxisCap,
+                             minor_breaks = trackAesthetics$yMinorBreaks
+                           )
+
+                           map_x_npc <- function(val) {
+                             (val - x_meta$expand_range[1]) / diff(x_meta$expand_range) * (p$x1 - p$x0) + p$x0
+                           }
+                           map_y_npc <- function(val) {
+                             (val - y_meta$expand_range[1]) / diff(y_meta$expand_range) * (p$y1 - p$y0) + p$y0
+                           }
+
                            # x‐axis along bottom of this track
-                           if (isTRUE(trackAesthetics$xAxisLine)) {
+                           if (isTRUE(trackAesthetics$xAxisLine) && !is.null(x_meta$axis_range)) {
+                             x0_line <- map_x_npc(x_meta$axis_range[1])
+                             x1_line <- map_x_npc(x_meta$axis_range[2])
                              grid.lines(
-                               x = unit(c(p$x0, p$x1), "npc"),
+                               x = unit(c(x0_line, x1_line), "npc"),
                                y = unit(c(p$y0, p$y0), "npc"),
                                gp = gpar(col = "#1C1B1A", lwd = 1)
                              )
                            }
 
-                           # y‐axis along left of first panel
-                           if (isTRUE(trackAesthetics$yAxisLine) &&
-                               (isTRUE(trackAesthetics$yAxisPerWindow) || win$window == 1)) {
-                             grid.lines(
-                               x = unit(c(p$x0, p$x0), "npc"),
-                               y = unit(c(p$y0, p$y1), "npc"),
-                               gp = gpar(col = "#1C1B1A", lwd = 1)
-                             )
-                           }
-
-                           # Draw x-axis ticks
-                           if (isTRUE(trackAesthetics$xAxisTicks)) {
-                             xbreaks <- xscale
-                             xgrid   <- (xbreaks - xscale[1]) / diff(xscale)
-
+                           # ticks + labels on X
+                           if (isTRUE(trackAesthetics$xAxisTicks) && length(x_meta$breaks)) {
                              sf <- if (!is.null(win$xScaleFactor)) win$xScaleFactor else 1e-6
+                             unit_label <- .axis_unit_label(sf)
 
-                             unit_label <- if (abs(sf - 1e-6) < 1e-9) {
-                               "Mb"
-                             } else if (abs(sf - 1e-3) < 1e-9) {
-                               "kb"
-                             } else if (abs(sf - 1) < 1e-9) {
-                               "bp"
-                             } else {
-                               paste0("×", signif(sf, 2))
+                             # labels (scaled)
+                             scaled_vals <- x_meta$breaks * sf
+                             xlabels <- .axis_format_num(scaled_vals)
+                             if (length(xlabels) > 0) {
+                               xlabels[length(xlabels)] <- paste0(xlabels[length(xlabels)], " ", unit_label)
                              }
 
-                             xlabels <- paste0(format(round(xbreaks * sf), big.mark = ",", scientific = F), " ", unit_label)
+                             for (i in seq_along(x_meta$breaks)) {
+                               xpos <- map_x_npc(x_meta$breaks[i])
 
-                             for (i in seq_along(xgrid)) {
-                               xpos <- win$full$x0 + xgrid[i] * (win$full$x1 - win$full$x0)
+                               # tick
                                grid.lines(
                                  x = unit(c(xpos, xpos), "npc"),
-                                 y = unit(c(win$full$y0, win$full$y0 - 0.005), "npc"),
+                                 y = unit(c(p$y0, p$y0 - trackAesthetics$tickLengthNPC), "npc"),
                                  gp = gpar(col = "#1C1B1A", lwd = 1)
                                )
 
+                               if (!is.null(x_meta$minor_breaks) && length(x_meta$minor_breaks)) {
+                                 for (mb in x_meta$minor_breaks) {
+                                   xpos <- map_x_npc(mb)
+                                   grid.lines(
+                                     x = unit(c(xpos, xpos), "npc"),
+                                     y = unit(c(p$y0, p$y0 - trackAesthetics$tickLengthNPC * 0.6), "npc"),
+                                     gp = gpar(col = "#1C1B1A", lwd = 0.5)  # thinner/shorter than majors
+                                   )
+                                 }
+                               }
+
+                               # label
                                if (isTRUE(trackAesthetics$xAxisLabels)) {
                                  grid.text(
-                                   #label = format(round(xbreaks[i] / 1000000), big.mark = ",", scientific = F),
                                    label = xlabels[i],
                                    x = unit(xpos, "npc"),
-                                   y = unit(win$full$y0 - 0.015, "npc"),
-                                   just = "top",
-                                   rot = trackAesthetics$xAxisLabelRotation,
+                                   y = unit(p$y0 - trackAesthetics$xLabelOffsetNPC, "npc"),
+                                   just  = "top",
+                                   rot   = trackAesthetics$xAxisLabelRotation,
                                    hjust = trackAesthetics$xAxisLabelHorizontalJust,
                                    vjust = trackAesthetics$xAxisLabelVerticalJust,
                                    gp = gpar(cex = 0.6)
@@ -3696,22 +3926,63 @@ SeqPlot <- R6Class("SeqPlot",
                              }
                            }
 
-                           # Draw y-axis ticks and labels
-                           if (isTRUE(trackAesthetics$yAxisTicks) && (isTRUE(trackAesthetics$yAxisPerWindow) || win$window == 1)) {
-                             ybreaks <- yscale
-                             ygrid   <- (ybreaks - yscale[1]) / diff(yscale)
-                             for (i in seq_along(ygrid)) {
-                               ypos <- win$full$y0 + ygrid[i] * (win$full$y1 - win$full$y0)
+                           # X axis title (chrom label), unchanged
+                           if (isTRUE(trackAesthetics$xAxisTitle)) {
+                             x_label <- gsub("^chr", "", as.character(seqnames(self$tracks[[t]]$windows[win$window])))
+                             grid.text(
+                               label = x_label,
+                               x = unit((p$x0 + p$x1) / 2, "npc"),
+                               y = unit(p$y0 - trackAesthetics$xTitleOffsetNPC, "npc"),
+                               just = "top",
+                               gp = gpar(cex = 0.6, fontface = "bold")
+                             )
+                           }
+
+                           # --- Y AXIS (left of panel or first window only) ---
+                           draw_y_here <- isTRUE(trackAesthetics$yAxisLine) &&
+                             (isTRUE(trackAesthetics$yAxisPerWindow) || win$window == 1)
+
+                           if (draw_y_here && !is.null(y_meta$axis_range)) {
+                             y0_line <- map_y_npc(y_meta$axis_range[1])
+                             y1_line <- map_y_npc(y_meta$axis_range[2])
+                             grid.lines(
+                               x = unit(c(p$x0, p$x0), "npc"),
+                               y = unit(c(y0_line, y1_line), "npc"),
+                               gp = gpar(col = "#1C1B1A", lwd = 1)
+                             )
+                           }
+
+                           if (isTRUE(trackAesthetics$yAxisTicks) &&
+                               (isTRUE(trackAesthetics$yAxisPerWindow) || win$window == 1) &&
+                               length(y_meta$breaks)) {
+
+                             for (i in seq_along(y_meta$breaks)) {
+                               ypos <- map_y_npc(y_meta$breaks[i])
+
+                               # tick
                                grid.lines(
-                                 x = unit(c(win$full$x0, win$full$x0 - 0.005), "npc"),
+                                 x = unit(c(p$x0, p$x0 - trackAesthetics$tickLengthNPC), "npc"),
                                  y = unit(c(ypos, ypos), "npc"),
                                  gp = gpar(col = "#1C1B1A", lwd = 1)
                                )
 
+                               if (!is.null(y_meta$minor_breaks) && length(y_meta$minor_breaks)) {
+                                 for (mb in y_meta$minor_breaks) {
+                                   xpos <- map_x_npc(mb)
+                                   grid.lines(
+                                     x = unit(c(xpos, xpos), "npc"),
+                                     y = unit(c(p$y0, p$y0 - trackAesthetics$tickLengthNPC * 0.6), "npc"),
+                                     gp = gpar(col = "#1C1B1A", lwd = 0.5)  # thinner/shorter than majors
+                                   )
+                                 }
+                               }
+
+
+                               # label
                                if (isTRUE(trackAesthetics$yAxisLabels)) {
                                  grid.text(
-                                   label = format(ybreaks[i], big.mark = ",", scientific = F),
-                                   x = unit(win$full$x0 - 0.01, "npc"),
+                                   label = .axis_format_num(y_meta$breaks[i]),
+                                   x = unit(p$x0 - trackAesthetics$yLabelOffsetNPC, "npc"),
                                    y = unit(ypos, "npc"),
                                    just = "right",
                                    gp = gpar(cex = 0.6)
@@ -3720,24 +3991,12 @@ SeqPlot <- R6Class("SeqPlot",
                              }
                            }
 
-                           # Draw x axis title
-                           if (isTRUE(trackAesthetics$xAxisTitle)) {
-                             x_label <- gsub("^chr", "", as.character(seqnames(self$tracks[[t]]$windows[win$window])))
-
-                             grid.text(
-                               label = x_label,
-                               x = unit((p$x0 + p$x1) / 2, "npc"),
-                               y = unit(p$y0 - 0.015, "npc"),
-                               just = "top",
-                               gp = gpar(cex = 0.6, fontface = "bold")
-                             )
-                           }
-
-                           # Draw y axis title
+                           # Y axis title (unchanged)
                            if (isTRUE(trackAesthetics$yAxisTitle) && win$window == 1) {
                              y_label <- if (!is.null(trackAesthetics$yAxisTitleText)) {
                                trackAesthetics$yAxisTitleText
-                             } else if (length(self$tracks[[t]]$elements) > 0 && !is.null(self$tracks[[t]]$elements[[1]]$yCol)) {
+                             } else if (length(self$tracks[[t]]$elements) > 0 &&
+                                        !is.null(self$tracks[[t]]$elements[[1]]$yCol)) {
                                self$tracks[[t]]$elements[[1]]$yCol
                              } else {
                                ""
@@ -3745,16 +4004,15 @@ SeqPlot <- R6Class("SeqPlot",
 
                              grid.text(
                                label = y_label,
-                               x = unit(p$x0 - 0.03, "npc"),
+                               x = unit(p$x0 - 0.05, "npc"),
                                y = unit((p$y0 + p$y1) / 2, "npc"),
                                just = "center",
-                               rot = trackAesthetics$yAxisTitleRotation,
-                               hjust = trackAesthetics$yAxisTitleHorizontalJust,
-                               vjust = trackAesthetics$yAxisTitleVerticalJust,
+                               rot  = trackAesthetics$yAxisTitleRotation %||% 90,
+                               hjust= trackAesthetics$yAxisTitleHorizontalJust %||% 0.5,
+                               vjust= trackAesthetics$yAxisTitleVerticalJust   %||% 0.5,
                                gp = gpar(cex = 0.6, fontface = "bold")
                              )
                            }
-
                          }
                        }
                      },
@@ -3817,3 +4075,5 @@ SeqPlot <- R6Class("SeqPlot",
 #     lims[2] + rng * mult + add)
 # }
 #
+
+
