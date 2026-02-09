@@ -3172,16 +3172,19 @@ SeqTrack <- R6::R6Class("SeqTrack",
                           #'   rendering and labeling:
                           #'   \describe{
                           #'     \item{xAxisTitle}{Logical; whether to show the x-axis title.}
+                          #'     \item{xAxisTitleText}{Optional custom text for the x-axis title.}
                           #'     \item{yAxisTitle}{Logical; whether to show the y-axis title.}
                           #'     \item{yAxisTitleText}{Optional custom text for the y-axis title.}
-                          #'     \item{yAxisLimits}{Optional numeric vector of length 2 setting
-                          #'     the y-axis limits.}
+                          #'     \item{yAxisLimits}{Optional numeric vector of length 2 setting the y-axis limits.}
+                          #'     \item{yAxisTitleRotation}{Optional numeric vector of length 1 setting the y-axis title rotation. Default is 90.}
                           #'   }
                           aesthetics = list(
                             xAxisTitle = TRUE,
+                            xAxisTitleText = TRUE,
                             yAxisTitle = TRUE,
                             yAxisTitleText = NULL,
-                            yAxisLimits = NULL
+                            yAxisLimits = NULL,
+                            yAxisTitleRotation = NULL
                           ),
 
                           #' @description
@@ -3198,9 +3201,11 @@ SeqTrack <- R6::R6Class("SeqTrack",
                                                 windows = NULL,
                                                 aesthetics = list(
                                                   xAxisTitle = TRUE,
+                                                  xAxisTitleText = TRUE,
                                                   yAxisTitle = TRUE,
                                                   yAxisTitleText = NULL,
-                                                  yAxisLimits = NULL
+                                                  yAxisLimits = NULL,
+                                                  yAxisTitleRotation = NULL
                                                 )) {
                             self$elements <- elements
                             self$windows <- windows
@@ -3738,7 +3743,7 @@ SeqPlot <- R6Class("SeqPlot",
                                                   data_range = NULL,     # true genomic/data range
                                                   manual_breaks = NULL,  # numeric or NULL
                                                   n = 5,                 # target # of pretty breaks
-                                                  cap = c("full", "capped", "ticks"),
+                                                  cap = c("full", "capped", "exact", "ticks"),
                                                   labels = NULL,
                                                   minor_breaks = NULL    # NULL, integer, or numeric
                        ) {
@@ -3750,7 +3755,6 @@ SeqPlot <- R6Class("SeqPlot",
                          br <- if (!is.null(manual_breaks)) {
                            as.numeric(manual_breaks)
                          } else {
-                           #pretty(pr, n = n)
                            br_fun <- scales::pretty_breaks(n=n)
                            br_fun(pr)
                          }
@@ -3760,6 +3764,7 @@ SeqPlot <- R6Class("SeqPlot",
                          ar <- switch(cap,
                                       full   = pr,
                                       capped = if (length(br)) range(br) else pr,
+                                      exact = dr,
                                       ticks  = NULL)
 
                          # --- major labels ---
@@ -4063,17 +4068,5 @@ SeqPlot <- R6Class("SeqPlot",
                      }
 
                    ))
-
-
-##' expand_limits
-##' @description Expands axis limits around data
-# expand_limits <- function(lims, expand) {
-#   mult <- expand[1]
-#   add  <- expand[2]
-#   rng  <- diff(lims)
-#   c(lims[1] - rng * mult - add,
-#     lims[2] + rng * mult + add)
-# }
-#
 
 
