@@ -4,22 +4,24 @@
 \alias{SeqSegment}
 \title{SeqSegment R6 Class}
 \description{
-R6 class for plotting line segments in the SeqPlot framework.
-Inherits from [SeqElement].
+R6 class for plotting line segments in the SeqPlot R6 framework.
+Segments represent features with genomic start–end ranges and y-values
+from metadata or defaults.
 }
 \details{
-The `SeqSegment` class represents genomic features drawn as horizontal
-or vertical line segments spanning ranges. It supports y-values from a
-single column (`yCol`) or separate start/end columns (`y0Col`, `y1Col`).
+The `SeqSegment` class inherits from [SeqElement] and draws horizontal or
+vertical line segments. Y-values can be supplied from a single column
+(`yCol`) or from separate start and end columns (`y0Col`, `y1Col`).
 }
 \examples{
-gr <- GenomicRanges::GRanges(
+library(GenomicRanges)
+gr <- GRanges(
   "chr1",
-  IRanges::IRanges(c(1, 100), width = 50),
+  IRanges(c(1, 100), width = 50),
   score = c(0.2, 0.8)
 )
 seg <- SeqSegment$new(gr, yCol = "score")
-seg$prep(layout_track = some_layout, track_windows = some_windows)
+seg$prep(layout_track = layout_info[[1]], track_windows = global_windows)
 seg$draw()
 
 }
@@ -31,26 +33,23 @@ seg$draw()
 \describe{
 \item{\code{gr}}{A `GRanges` object containing genomic intervals.}
 
-\item{\code{y0}}{Numeric vector of lower y-values for segments.}
+\item{\code{y0}}{Numeric vector of lower y-values.}
 
-\item{\code{y1}}{Numeric vector of upper y-values for segments.}
+\item{\code{y1}}{Numeric vector of upper y-values.}
 
-\item{\code{yCol}}{Optional metadata column used for both y0 and y1 values.}
+\item{\code{yCol}}{Optional metadata column for both y0 and y1 values.}
 
-\item{\code{y0Col}}{Optional metadata column used for lower y-values.}
+\item{\code{y0Col}}{Optional metadata column for lower y-values.}
 
-\item{\code{y1Col}}{Optional metadata column used for upper y-values.}
+\item{\code{y1Col}}{Optional metadata column for upper y-values.}
 
-\item{\code{coordOriginal}}{A `GRanges` object storing the unmodified input
-coordinates.}
+\item{\code{coordOriginal}}{A `GRanges` object storing original input coordinates.}
 
-\item{\code{coordCanvas}}{A list of transformed segment coordinates
-prepared for plotting.}
+\item{\code{coordCanvas}}{A list of transformed segment coordinates per window.}
 
-\item{\code{aesthetics}}{List of aesthetics merged with defaults.}
+\item{\code{aesthetics}}{List of visual aesthetics.}
 
-\item{\code{defaultAesthetics}}{Default aesthetics:
-\code{lwd = 1.5}, \code{col = "#1C1B1A"}.}
+\item{\code{defaultAesthetics}}{Default values for aesthetics.}
 }
 \if{html}{\out{</div>}}
 }
@@ -83,26 +82,22 @@ Create a new `SeqSegment` object.
 \describe{
 \item{\code{gr}}{A `GRanges` object containing genomic intervals.}
 
-\item{\code{yCol}}{Optional column name in `gr` used for both y0 and y1.}
+\item{\code{yCol}}{Column name in `gr` for both y0 and y1 values (optional).}
 
-\item{\code{y0Col}}{Optional column name in `gr` for lower y-values.}
+\item{\code{y0Col}}{Column name in `gr` for lower y-values (optional).}
 
-\item{\code{y1Col}}{Optional column name in `gr` for upper y-values.}
+\item{\code{y1Col}}{Column name in `gr` for upper y-values (optional).}
 
 \item{\code{aesthetics}}{Optional list of aesthetic overrides.}
 }
 \if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-A new `SeqSegment` object.
 }
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-SeqSegment-prep"></a>}}
 \if{latex}{\out{\hypertarget{method-SeqSegment-prep}{}}}
 \subsection{Method \code{prep()}}{
-Prepare segment coordinates by mapping genomic intervals into
-panel-relative canvas space.
+Prepare segment coordinates by mapping genomic intervals into canvas space.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{SeqSegment$prep(layout_track, track_windows)}\if{html}{\out{</div>}}
 }
@@ -110,9 +105,9 @@ panel-relative canvas space.
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{layout_track}}{A list of panel layout metadata.}
+\item{\code{layout_track}}{Panel layout metadata (from grid layout).}
 
-\item{\code{track_windows}}{A `GRanges` object of genomic windows.}
+\item{\code{track_windows}}{Genomic windows (`GRanges`) for this track.}
 }
 \if{html}{\out{</div>}}
 }

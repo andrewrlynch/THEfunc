@@ -379,7 +379,7 @@ drawSeqString <- function(x0, y0, x1, y1,
                           strand2 = "*",
                           orientation = "*",
                           type = c("c", "s"),
-                          bulge = 0.03,
+                          bulge = 0.04,
                           lwd = 1.5,
                           col = "red",
                           alpha = 1) {
@@ -534,6 +534,11 @@ stringTypeFromStrand <- function(gr1, gr2, default = "c") {
 #' An R6 class for plotting genomic points, such as SNPs or single-base
 #' features, on a SeqPlot track. Each genomic range is drawn as a point,
 #' with optional y-axis values from metadata.
+#'
+#' @param gr GRange object of point coordinates.
+#' @param y A numeric vector of y-values for each point. Defaults to 0.5 if no `yCol` is provided.
+#' @param yCol Optional character string naming a metadata column in `gr` that will be used for y-values.
+#' @param color Optional character string naming a metadata column in `gr` that will be used for color values.
 #'
 #' @export
 SeqPoint <- R6::R6Class("SeqPoint",
@@ -2035,6 +2040,11 @@ SeqString <- R6::R6Class("SeqString",
                            curvature = NULL,
                            aesthetics = list(),
 
+                           #' @description
+                           #' Create a new `SeqString` object.
+                           #' @param gr1,gr2 GRange objects of start (`gr1`) and end (`gr2`) positions of SV junctions.
+                           #' @param aesthetics A named list of aesthetics to override defaults (`shape`, `size`, `color`).
+                           #' @return A new `SeqString` object.
                            initialize = function(gr1, gr2,
                                                  t0 = 0, t1 = 0,
                                                  y0 = 0, y1 = 0,
@@ -2717,7 +2727,7 @@ SeqIdeogram <- R6::R6Class("SeqIdeogram",
                                      y      = unit((coords$y0 + coords$y1) / 2, "npc"),
                                      width  = unit(coords$x1 - coords$x0, "npc"),
                                      height = unit(coords$y1 - coords$y0, "npc"),
-                                     gp     = gpar(fill = coords$fill, col = "black", lwd = 0.66)
+                                     gp     = gpar(fill = coords$fill, col = "black", lwd = 0.1)
                                    )
                                  }
                                }
@@ -2728,7 +2738,7 @@ SeqIdeogram <- R6::R6Class("SeqIdeogram",
                                      grid.polygon(
                                        x = unit(tri$x, "npc"),
                                        y = unit(tri$y, "npc"),
-                                       gp = gpar(fill = "#FF0000", col = "black", lwd = 0.66)
+                                       gp = gpar(fill = "#FF0000", col = "black", lwd = 0.1)
                                      )
                                    }
                                  }
@@ -3979,7 +3989,7 @@ SeqHighlightClass <- R6::R6Class(
 
       fill2 <- grDevices::adjustcolor(fill, alpha.f = alpha)
 
-      hlStemOffsetNPC = 0.02
+      hlStemOffsetNPC = 0.01
 
       for (i in seq_len(nrow(df))) {
         xs <- c(df$x00[i], df$x00[i], df$x10[i], df$x10[i], df$x11[i], df$x11[i], df$x01[i], df$x01[i])
@@ -4951,5 +4961,3 @@ SeqPlot <- R6Class("SeqPlot",
                      }
 
                    ))
-
-

@@ -35,10 +35,11 @@ covered by this track.}
 rendering and labeling:
 \describe{
   \item{xAxisTitle}{Logical; whether to show the x-axis title.}
+  \item{xAxisTitleText}{Optional custom text for the x-axis title.}
   \item{yAxisTitle}{Logical; whether to show the y-axis title.}
   \item{yAxisTitleText}{Optional custom text for the y-axis title.}
-  \item{yAxisLimits}{Optional numeric vector of length 2 setting
-  the y-axis limits.}
+  \item{yAxisLimits}{Optional numeric vector of length 2 setting the y-axis limits.}
+  \item{yAxisTitleRotation}{Optional numeric vector of length 1 setting the y-axis title rotation. Default is 90.}
 }}
 }
 \if{html}{\out{</div>}}
@@ -60,8 +61,8 @@ Create a new `SeqTrack` object.
 \if{html}{\out{<div class="r">}}\preformatted{SeqTrack$new(
   elements = list(),
   windows = NULL,
-  aesthetics = list(xAxisTitle = TRUE, yAxisTitle = TRUE, yAxisTitleText = NULL,
-    yAxisLimits = NULL)
+  aesthetics = list(xAxisTitle = TRUE, xAxisTitleText = TRUE, yAxisTitle = TRUE,
+    yAxisTitleText = NULL, yAxisLimits = NULL, yAxisTitleRotation = NULL)
 )}\if{html}{\out{</div>}}
 }
 
