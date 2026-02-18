@@ -34,11 +34,15 @@ of the points and any associated metadata.}
 \item{\code{yCol}}{Optional character string naming a metadata column in
 `gr` that will be used for y-values.}
 
+\item{\code{color}}{Optional character string naming a metadata column in `gr` that will be used for color values.}
+
 \item{\code{coordOriginal}}{A `GRanges` object storing the original,
 unmodified genomic coordinates.}
 
 \item{\code{coordCanvas}}{A list of per-panel coordinate matrices
 (x, y in canvas units) produced by `prep()`.}
+
+\item{\code{coordIndex}}{A list of per-panel coordinate indices.}
 
 \item{\code{aesthetics}}{A list of plotting aesthetics for the points,
 merged from user input and defaults.}
@@ -65,7 +69,7 @@ merged from user input and defaults.}
 \subsection{Method \code{new()}}{
 Create a new `SeqPoint` object.
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{SeqPoint$new(gr, yCol = NULL, aesthetics = list())}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{SeqPoint$new(gr, yCol = NULL, color = NULL, aesthetics = list())}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -74,6 +78,8 @@ Create a new `SeqPoint` object.
 \item{\code{gr}}{A `GRanges` object of point features.}
 
 \item{\code{yCol}}{Optional column in `gr` metadata to use as y-values.}
+
+\item{\code{color}}{Optional character string naming a metadata column in `gr` that will be used for color values.}
 
 \item{\code{aesthetics}}{A named list of aesthetics to override defaults
 (`shape`, `size`, `color`).}
