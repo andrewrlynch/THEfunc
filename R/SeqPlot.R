@@ -602,7 +602,7 @@ SeqPoint <- R6::R6Class("SeqPoint",
                           #' @return A new `SeqPoint` object.
                           #' @examples
                           #' gr <- GenomicRanges::GRanges("chr1", IRanges::IRanges(1:5, width = 1))
-                          #' pt <- SeqPoint$new(gr)
+                          #' pt <- SeqPoint(gr)
                           #' pt$prep(layout_track, track_windows)
                           #' pt$draw()
                           initialize = function(gr, yCol = NULL, color = NULL,
@@ -1117,7 +1117,7 @@ SeqMatrix <- R6::R6Class("SeqMatrix",
 #'   IRanges(c(1, 100), width = 50),
 #'   score = c(0.2, 0.8)
 #' )
-#' seg <- SeqSegment$new(gr, yCol = "score")
+#' seg <- SeqSegment(gr, yCol = "score")
 #' seg$prep(layout_track = layout_info[[1]], track_windows = global_windows)
 #' seg$draw()
 #'
@@ -1300,7 +1300,7 @@ SeqSegment <- R6::R6Class(
 #'   IRanges::IRanges(c(1, 100), width = 50),
 #'   score = c(0.2, 0.8)
 #' )
-#' rects <- SeqRect$new(gr, yCol = "score")
+#' rects <- SeqRect(gr, yCol = "score")
 #' rects$prep(layout_track = some_layout, track_windows = some_windows)
 #' rects$draw()
 #'
@@ -1496,7 +1496,7 @@ SeqRect <- R6::R6Class("SeqRect",
 #'   score = c(2, 5, 3),
 #'   group = c("A", "B", "A")
 #' )
-#' bars <- SeqBar$new(gr, yCol = "score", groupCol = "group")
+#' bars <- SeqBar(gr, yCol = "score", groupCol = "group")
 #' bars$prep(layout_track = some_layout, track_windows = some_windows)
 #' bars$draw()
 #'
@@ -1756,7 +1756,7 @@ SeqBar <- R6::R6Class("SeqBar",
 #'   IRanges::IRanges(c(1, 100, 200), width = 50),
 #'   score = c(2, 5, 3)
 #' )
-#' line <- SeqLine$new(gr, yCol = "score")
+#' line <- SeqLine(gr, yCol = "score")
 #' line$prep(layout_track = some_layout, track_windows = some_windows)
 #' line$draw()
 #'
@@ -1910,7 +1910,7 @@ SeqLine <- R6::R6Class("SeqLine",
 #'   score = c(2, 5, 3),
 #'   group = c("A", "B", "A")
 #' )
-#' area <- SeqArea$new(gr, yCol = "score", groupCol = "group")
+#' area <- SeqArea(gr, yCol = "score", groupCol = "group")
 #' area$prep(layout_track = some_layout, track_windows = some_windows)
 #' area$draw()
 #'
@@ -2350,7 +2350,7 @@ SeqString <- R6::R6Class("SeqString",
 #' @examples
 #' gr1 <- GenomicRanges::GRanges("chr1", IRanges::IRanges(c(10, 50), width = 1))
 #' gr2 <- GenomicRanges::GRanges("chr1", IRanges::IRanges(c(100, 150), width = 1))
-#' link <- SeqLink$new(gr1, gr2, t0 = 1, t1 = 1, y0 = 0, y1 = 0, orientation = "+")
+#' link <- SeqLink(gr1, gr2, t0 = 1, t1 = 1, y0 = 0, y1 = 0, orientation = "+")
 #' link$gr1
 #'
 #' @export
@@ -2428,7 +2428,7 @@ SeqLink <- R6::R6Class("SeqLink",
 #' @examples
 #' gr1 <- GenomicRanges::GRanges("chr1", IRanges::IRanges(c(10, 50), width = 1))
 #' gr2 <- GenomicRanges::GRanges("chr1", IRanges::IRanges(c(100, 150), width = 1))
-#' arch <- SeqArch$new(gr1, gr2, t0 = 1, t1 = 1, height = 0.5)
+#' arch <- SeqArch(gr1, gr2, t0 = 1, t1 = 1, height = 0.5)
 #' # arch$prep(layout_all_tracks = some_layout, track_windows_list = some_windows, arc_track_idx = 1)
 #' # arch$draw()
 #'
@@ -2750,7 +2750,7 @@ SeqIdeogram <- R6::R6Class("SeqIdeogram",
                              #'   ranges   = IRanges::IRanges(c(1, 500001, 1000001), width = 500000),
                              #'   gieStain = c("gneg", "acen", "gpos100")
                              #' )
-                             #' ideogram <- SeqIdeogram$new(cb)
+                             #' ideogram <- SeqIdeogram(cb)
                              initialize = function(cytobands) {
                                stopifnot(inherits(cytobands, "GRanges"))
                                self$cytobands <- cytobands
@@ -2890,7 +2890,7 @@ SeqIdeogram <- R6::R6Class("SeqIdeogram",
 #' @examples
 #' gr1 <- GenomicRanges::GRanges("chr1", IRanges::IRanges(c(10, 50), width = 1), strand = c("+", "-"))
 #' gr2 <- GenomicRanges::GRanges("chr1", IRanges::IRanges(c(100, 150), width = 1), strand = c("+", "-"))
-#' recon <- SeqRecon$new(gr1, gr2)
+#' recon <- SeqRecon(gr1, gr2)
 #' # recon$prep(layout_all_tracks = some_layout, track_windows_list = some_windows, arc_track_idx = 1)
 #' # recon$draw()
 #'
@@ -3326,7 +3326,7 @@ SeqRecon <- R6::R6Class("SeqRecon",
 #'   gene_id  = c("GENE1", "GENE1", "GENE2"),
 #'   strand   = c("+", "+", "-")
 #' )
-#' gene_plot <- SeqGene$new(gr, geneCol = "gene_id", strandCol = "strand")
+#' gene_plot <- SeqGene(gr, geneCol = "gene_id", strandCol = "strand")
 #' # gene_plot$prep(layout_track, track_windows)
 #' # gene_plot$draw()
 #'
@@ -3932,7 +3932,7 @@ SeqBlankTrack <- function(windows = NULL,
 
   blank_aes <- modifyList(blank_aes, aesthetics)
 
-  trk <- SeqTrack$new(
+  trk <- SeqTrack(
     elements = list(),
     windows = windows,
     aesthetics = blank_aes
@@ -4152,8 +4152,8 @@ SeqHighlight <- function(gr, t0 = 1, t1 = 2, ...) {
 #' @examples
 #' library(GenomicRanges)
 #' win <- GRanges("chr1", IRanges(c(1, 1001), width = 500))
-#' track <- SeqTrack$new(windows = win)
-#' track$addElement(SeqRect$new(win))
+#' track <- SeqTrack(windows = win)
+#' track$addElement(SeqRect(win))
 #' length(track$elements)
 #'
 #' @export
@@ -4274,9 +4274,9 @@ SeqTrack <- R6::R6Class("SeqTrack",
 #' @examples
 #' library(GenomicRanges)
 #' win <- GRanges("chr1", IRanges(c(1, 1001), width = 500))
-#' track1 <- SeqTrack$new(windows = win)
-#' track2 <- SeqTrack$new(windows = win)
-#' sp <- SeqPlot$new(tracks = list(track1, track2), windows = win)
+#' track1 <- SeqTrack(windows = win)
+#' track2 <- SeqTrack(windows = win)
+#' sp <- SeqPlot(tracks = list(track1, track2), windows = win)
 #' sp$layoutGrid()
 #' sp$drawGrid()
 #' sp$drawAxes()
