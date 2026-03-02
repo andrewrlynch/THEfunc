@@ -5250,6 +5250,22 @@ SeqPlot <- R6Class("SeqPlot",
 .SeqReconR6   <- SeqRecon
 .SeqGeneR6    <- SeqGene
 
+# Pin `inherit` fields to the stored R6ClassGenerators before the class names
+# are overwritten with function wrappers.  R6 lazily evaluates `inherit =` at
+# $new() time, so without this, classes that inherit a wrapped name (e.g.
+# SeqArch$inherit → "SeqLink") would resolve to the function wrapper and error
+# with "inherit must be a R6ClassGenerator".
+#
+# Affected chains:
+#   SeqString      → SeqLink  (SeqLink will become a function)
+#   SeqArch        → SeqLink
+#   SeqRecon       → SeqArch  (SeqArch will become a function)
+#   SeqHighlightClass → SeqLink  (not wrapped itself, but inherits SeqLink)
+.SeqStringR6$inherit    <- .SeqLinkR6
+.SeqArchR6$inherit      <- .SeqLinkR6
+.SeqReconR6$inherit     <- .SeqArchR6
+SeqHighlightClass$inherit <- .SeqLinkR6
+
 #' Create a new SeqTrack
 #' @inheritParams SeqTrack_R6
 #' @export
@@ -5302,12 +5318,14 @@ SeqGene    <- function(...) .SeqGeneR6$new(...)
 #' @param e2 A `SeqTrack` object.
 #' @return The `SeqPlot` (invisibly modified in place).
 #' @export
-`%|%` <- function(e1, e2) UseMethod("%|%")
-
-#' @export
-`%|%.SeqPlot` <- function(e1, e2) {
-  if (inherits(e2, "SeqTrack")) { e1$addTrack(e2); return(e1) }
-  stop("%|% expects a SeqTrack on the right-hand side (got '", class(e2)[1], "')")
+`%|%` <- function(e1, e2) {
+  if (inherits(e1, "SeqPlot")) {
+    if (!inherits(e2, "SeqTrack"))
+      stop("%|% expects a SeqTrack on the right-hand side (got '", class(e2)[1], "')")
+    e1$addTrack(e2)
+    return(e1)
+  }
+  stop("No method for '%|%' for object of class '", class(e1)[1], "'")
 }
 
 #' Add a SeqElement to a SeqTrack or SeqPlot
@@ -5320,30 +5338,27 @@ SeqGene    <- function(...) .SeqGeneR6$new(...)
 #' @param e2 A `SeqElement` or `SeqLink`.
 #' @return `e1`, invisibly modified in place.
 #' @export
-`%+%` <- function(e1, e2) UseMethod("%+%")
-
-#' @export
-`%+%.SeqPlot` <- function(e1, e2) {
-  n <- length(e1$tracks)
-  if (n == 0) stop("No tracks in SeqPlot yet — start with SeqPlot() %|% SeqTrack()")
-  if (inherits(e2, c("SeqElement", "SeqLink"))) {
-    e1$tracks[[n]]$addElement(e2)
-    return(e1)
+`%+%` <- function(e1, e2) {
+  if (inherits(e1, "SeqPlot")) {
+    n <- length(e1$tracks)
+    if (n == 0) stop("No tracks in SeqPlot yet — start with SeqPlot() %|% SeqTrack()")
+    if (inherits(e2, c("SeqElement", "SeqLink"))) {
+      e1$tracks[[n]]$addElement(e2)
+      return(e1)
+    }
+    if (inherits(e2, "SeqTrack")) {
+      e1$addTrack(e2)
+      return(e1)
+    }
+    stop("%+% cannot add object of class '", class(e2)[1], "' to a SeqPlot")
   }
-  if (inherits(e2, "SeqTrack")) {
-    e1$addTrack(e2)
-    return(e1)
-  }
-  stop("%+% cannot add object of class '", class(e2)[1], "' to a SeqPlot")
-}
-
-#' @export
-`%+%.SeqTrack` <- function(e1, e2) {
-  if (inherits(e2, c("SeqElement", "SeqLink"))) {
+  if (inherits(e1, "SeqTrack")) {
+    if (!inherits(e2, c("SeqElement", "SeqLink")))
+      stop("%+% cannot add object of class '", class(e2)[1], "' to a SeqTrack")
     e1$addElement(e2)
     return(e1)
   }
-  stop("%+% cannot add object of class '", class(e2)[1], "' to a SeqTrack")
+  stop("No method for '%+%' for object of class '", class(e1)[1], "'")
 }
 
 
