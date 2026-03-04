@@ -345,11 +345,15 @@ SeqElement <- R6::R6Class("SeqElement",
                           public = list(
 
                             #' @field gr A `GRanges` object containing the genomic coordinates
-                            #'   and any associated metadata.
+                            #'   (x-axis by default) and any associated metadata.
                             gr = NULL,
 
+                            #' @field gr_y Optional `GRanges` when the element provides genomic
+                            #'   coordinates for the y-axis (enables genomic y-axis / 2D features).
+                            gr_y = NULL,
+
                             #' @field coordOriginal A `GRanges` object storing the unmodified input
-                            #'   coordinates.
+                            #'   coordinates for the primary (x) axis.
                             coordOriginal = NULL,
 
                             #' @field coordGrid Placeholder for transformed coordinates after applying
@@ -358,17 +362,33 @@ SeqElement <- R6::R6Class("SeqElement",
 
                             #' @description
                             #' Create a new `SeqElement` object.
-                            #' @param gr A `GRanges` object containing genomic positions and optional
-                            #'   metadata columns.
+                            #' Backwards-compatible: accepts either `gr=` or `x=` for the primary
+                            #' genomic coordinate. An optional `y=` GRanges may be provided to
+                            #' enable genomic y-axis behavior for compatible elements.
+                            #' @param gr Deprecated. A `GRanges` object (old name for x).
+                            #' @param x Preferred primary `GRanges` for x-axis positions.
+                            #' @param y Optional `GRanges` for genomic y-axis positions.
                             #' @param yCol Optional character string naming a metadata column in `gr`
-                            #'   to be used for y-axis values.
+                            #'   to be used for numeric/categorical y-axis values.
                             #' @return A new `SeqElement` object.
-                            initialize = function(gr, yCol = NULL) {
-                              if (!inherits(gr, "GRanges")) {
-                                stop("gr must be a GRanges object.")
+                            initialize = function(gr = NULL, x = NULL, y = NULL, yCol = NULL) {
+                              # Accept either x or gr for backwards compatibility
+                              if (!is.null(x)) {
+                                if (!inherits(x, "GRanges")) stop("x must be a GRanges object.")
+                                self$gr <- x
+                                self$coordOriginal <- x
+                              } else if (!is.null(gr)) {
+                                if (!inherits(gr, "GRanges")) stop("gr must be a GRanges object.")
+                                self$gr <- gr
+                                self$coordOriginal <- gr
+                              } else {
+                                stop("Either `x` or `gr` must be supplied and be a GRanges.")
                               }
-                              self$gr <- gr
-                              self$coordOriginal <- gr
+
+                              if (!is.null(y)) {
+                                if (!inherits(y, "GRanges")) stop("y must be a GRanges object when provided.")
+                                self$gr_y <- y
+                              }
                             },
 
                             #' @description
@@ -605,26 +625,33 @@ SeqPoint <- R6::R6Class("SeqPoint",
                           #' pt <- SeqPoint(gr)
                           #' pt$prep(layout_track, track_windows)
                           #' pt$draw()
-                          initialize = function(gr, yCol = NULL, color = NULL,
+                          initialize = function(gr = NULL, x = NULL, yCol = NULL, color = NULL,
                                                 aesthetics = list(),
                                                 aes = NULL, scale = NULL) {
-                            stopifnot(inherits(gr, "GRanges"))
-                            self$gr <- gr
-                            self$coordOriginal <- gr
+                            # Accept either x (preferred) or legacy gr
+                            if (!is.null(x)) {
+                              stopifnot(inherits(x, "GRanges"))
+                              gr_use <- x
+                            } else {
+                              stopifnot(inherits(gr, "GRanges"))
+                              gr_use <- gr
+                            }
+                            self$gr <- gr_use
+                            self$coordOriginal <- gr_use
                             self$yCol <- yCol
 
-                            if (!is.null(yCol) && yCol %in% names(mcols(gr))) {
-                              self$y <- as.numeric(mcols(gr)[[yCol]])
+                            if (!is.null(yCol) && yCol %in% names(mcols(gr_use))) {
+                              self$y <- as.numeric(mcols(gr_use)[[yCol]])
                             } else {
-                              self$y <- rep(0.5, length(gr))
+                              self$y <- rep(0.5, length(gr_use))
                             }
 
-                            n <- length(gr)
+                            n <- length(gr_use)
 
                             if (!is.null(color) && is.character(color) && length(color) == 1 &&
-                                color %in% names(mcols(gr))) {
+                                color %in% names(mcols(gr_use))) {
                               # Mapping: column of gr
-                              color_vals <- as.character(mcols(gr)[[color]])
+                              color_vals <- as.character(mcols(gr_use)[[color]])
                             } else if (!is.null(color) && length(color) == n) {
                               # Mapping: explicit vector of colors
                               color_vals <- as.character(color)
@@ -768,26 +795,47 @@ SeqTile <- R6::R6Class("SeqTile",
 
                          #' @description
                          #' Create a new `SeqTile` object.
-                         #' @param gr A `GRanges` object. Must have a `color` metadata column
-                         #'   unless `aes(fill = ...)` is used.
+                         #' Backwards compatibility: accepts `gr=` or `x=` for primary
+                         #' genomic ranges. Optionally accepts `y=` as a `GRanges` to
+                         #' enable genomic y-axis (2D mode). Otherwise use `aes(y=...)`
+                         #' or `groupCol` to define discrete categories on the y-axis.
+                         #' @param gr Deprecated primary `GRanges` (use `x=`).
+                         #' @param x Primary `GRanges` for x-axis positions.
+                         #' @param y Optional `GRanges` for genomic y-axis positions (must
+                         #'   have length equal to `x` or `gr`).
                          #' @param groupCol Column name in `gr` metadata for grouping (y-axis).
-                         #'   Legacy parameter — prefer `aes(y = ...)`.
                          #' @param aesthetics List of aesthetics (`border`, `lwd`).
                          #' @param aes A `SeqAes` object from `aes()`. Use `y` to map a
                          #'   column to discrete y-axis categories and `fill` to map a
                          #'   column to tile fill color.
                          #' @param scale A `SeqScale` color scale for the fill mapping.
-                         initialize = function(gr, groupCol = NULL, aesthetics = list(),
+                         initialize = function(gr = NULL, x = NULL, y = NULL,
+                                               groupCol = NULL, aesthetics = list(),
                                                aes = NULL, scale = NULL) {
-                           stopifnot(inherits(gr, "GRanges"))
+                           # resolve primary ranges (x or legacy gr)
+                           if (!is.null(x)) {
+                             stopifnot(inherits(x, "GRanges"))
+                             gr_use <- x
+                           } else if (!is.null(gr)) {
+                             stopifnot(inherits(gr, "GRanges"))
+                             gr_use <- gr
+                           } else {
+                             stop("Either `x=` (preferred) or `gr=` must be supplied as a GRanges for SeqTile.")
+                           }
 
-                           # --- Resolve y-axis grouping ---
-                           if (!is.null(aes) && !is.null(aes[["y"]])) {
-                             # New path: aes(y = cell)
+                           # --- Resolve y-axis grouping OR genomic y ---
+                           if (!is.null(y)) {
+                             # 2D genomic mode: y must be GRanges and match length
+                             stopifnot(inherits(y, "GRanges"))
+                             if (length(y) != length(gr_use))
+                               stop("When providing `y=` GRanges it must be the same length as `x`/`gr`.")
+                             self$gr_y <- y
+                           } else if (!is.null(aes) && !is.null(aes[["y"]])) {
+                             # discrete y mapping via aes
                              y_col <- aes[["y"]]
-                             if (!y_col %in% names(mcols(gr)))
+                             if (!y_col %in% names(mcols(gr_use)))
                                stop("y column '", y_col, "' not found in gr metadata.")
-                             raw <- mcols(gr)[[y_col]]
+                             raw <- mcols(gr_use)[[y_col]]
                              self$groupCol <- y_col
                              self$groups   <- if (is.factor(raw)) levels(raw)
                                               else unique(as.character(raw))
@@ -795,10 +843,10 @@ SeqTile <- R6::R6Class("SeqTile",
 
                            } else if (!is.null(groupCol)) {
                              # Legacy path
-                             if (!groupCol %in% names(mcols(gr)))
+                             if (!groupCol %in% names(mcols(gr_use)))
                                stop("Provided groupCol not found in metadata.")
                              self$groupCol <- groupCol
-                             vals          <- as.character(mcols(gr)[[groupCol]])
+                             vals          <- as.character(mcols(gr_use)[[groupCol]])
                              self$groups   <- unique(vals)
                              self$y        <- match(vals, self$groups)
                            }
@@ -806,19 +854,19 @@ SeqTile <- R6::R6Class("SeqTile",
                            # --- Resolve fill ---
                            if (!is.null(aes) && !is.null(aes[["fill"]])) {
                              resolved <- .resolve_aes(
-                               as.data.frame(S4Vectors::mcols(gr)), aes, scale,
-                               length(gr), "grey80"
+                               as.data.frame(S4Vectors::mcols(gr_use)), aes, scale,
+                               length(gr_use), "grey80"
                              )
                              if (!is.null(resolved$fill)) {
-                               mcols(gr)$color <- resolved$fill
+                               mcols(gr_use)$color <- resolved$fill
                              }
-                           } else if (!"color" %in% names(mcols(gr))) {
+                           } else if (!"color" %in% names(mcols(gr_use))) {
                              if (is.null(aes))
-                               stop("`gr` must contain a 'color' metadata column or use aes(fill = ...).")
+                               stop("`gr`/`x` must contain a 'color' metadata column or use aes(fill = ...).")
                            }
 
-                           self$gr <- gr
-                           self$coordOriginal <- gr
+                           self$gr <- gr_use
+                           self$coordOriginal <- gr_use
                            self$aesthetics <- modifyList(self$defaultAesthetics, aesthetics)
                          },
 
@@ -837,8 +885,18 @@ SeqTile <- R6::R6Class("SeqTile",
 
                            x0     <- start(self$gr)[qh]
                            x1     <- end(self$gr)[qh]
-                           y_idx  <- self$y[qh]
                            colors <- as.character(mcols(self$gr)$color)[qh]
+
+                           # If genomic y provided, compute y0/y1 from gr_y
+                           y_idx <- NULL
+                           y0_raw <- NULL
+                           y1_raw <- NULL
+                           if (!is.null(self$gr_y)) {
+                             y0_raw <- start(self$gr_y)[qh]
+                             y1_raw <- end(self$gr_y)[qh]
+                           } else if (!is.null(self$y)) {
+                             y_idx <- self$y[qh]
+                           }
 
                            for (w in unique(sh)) {
                              mask <- sh == w
@@ -852,27 +910,72 @@ SeqTile <- R6::R6Class("SeqTile",
                              u0 <- pmax(pmin(u0, 1), 0)
                              u1 <- pmax(pmin(u1, 1), 0)
 
-                             # y: integer positions scaled through yscale
-                             # For discrete yscale = c(0.5, N+0.5),
-                             # each tile spans (idx - 0.5) to (idx + 0.5)
-                             y0_data <- y_idx[mask] - 0.5
-                             y1_data <- y_idx[mask] + 0.5
-                             v0 <- (y0_data - panel$yscale[1]) / diff(panel$yscale)
-                             v1 <- (y1_data - panel$yscale[1]) / diff(panel$yscale)
-                             v0 <- pmax(pmin(v0, 1), 0)
-                             v1 <- pmax(pmin(v1, 1), 0)
+                             if (!is.null(y0_raw)) {
+                               # Genomic y-axis
+                               y0_m <- y0_raw[mask]
+                               y1_m <- y1_raw[mask]
 
-                             # canvas coordinates
-                             x0_c <- panel$inner$x0 + u0 * (panel$inner$x1 - panel$inner$x0)
-                             x1_c <- panel$inner$x0 + u1 * (panel$inner$x1 - panel$inner$x0)
-                             y0_c <- panel$inner$y0 + v0 * (panel$inner$y1 - panel$inner$y0)
-                             y1_c <- panel$inner$y0 + v1 * (panel$inner$y1 - panel$inner$y0)
+                               if (!is.null(panel$y_sub_panels)) {
+                                 # Multiple y-windows: map tiles to appropriate sub-panel
+                                 all_frames <- vector("list", length(panel$y_sub_panels))
+                                 for (yw in seq_along(panel$y_sub_panels)) {
+                                   sub <- panel$y_sub_panels[[yw]]
+                                   yscale_yw <- sub$yscale
+                                   y_in_sub <- y0_m >= yscale_yw[1] & y1_m <= yscale_yw[2]
+                                   if (sum(y_in_sub) == 0) next
+                                   v0 <- pmax(pmin((y0_m[y_in_sub] - yscale_yw[1]) / diff(yscale_yw), 1), 0)
+                                   v1 <- pmax(pmin((y1_m[y_in_sub] - yscale_yw[1]) / diff(yscale_yw), 1), 0)
+                                   all_frames[[yw]] <- data.frame(
+                                     x0 = panel$inner$x0 + u0[y_in_sub] * (panel$inner$x1 - panel$inner$x0),
+                                     x1 = panel$inner$x0 + u1[y_in_sub] * (panel$inner$x1 - panel$inner$x0),
+                                     y0 = sub$y0 + v0 * (sub$y1 - sub$y0),
+                                     y1 = sub$y0 + v1 * (sub$y1 - sub$y0),
+                                     col = colors[mask][y_in_sub]
+                                   )
+                                 }
+                                 self$coordCanvas[[w]] <- do.call(rbind, Filter(Negate(is.null), all_frames))
+                               } else {
+                                 # Single y-window
+                                 v0 <- (y0_m - panel$yscale[1]) / diff(panel$yscale)
+                                 v1 <- (y1_m - panel$yscale[1]) / diff(panel$yscale)
+                                 v0 <- pmax(pmin(v0, 1), 0)
+                                 v1 <- pmax(pmin(v1, 1), 0)
 
-                             self$coordCanvas[[w]] <- data.frame(
-                               x0 = x0_c, x1 = x1_c,
-                               y0 = y0_c, y1 = y1_c,
-                               col = colors[mask]
-                             )
+                                 # canvas coordinates
+                                 x0_c <- panel$inner$x0 + u0 * (panel$inner$x1 - panel$inner$x0)
+                                 x1_c <- panel$inner$x0 + u1 * (panel$inner$x1 - panel$inner$x0)
+                                 y0_c <- panel$inner$y0 + v0 * (panel$inner$y1 - panel$inner$y0)
+                                 y1_c <- panel$inner$y0 + v1 * (panel$inner$y1 - panel$inner$y0)
+
+                                 self$coordCanvas[[w]] <- data.frame(
+                                   x0 = x0_c, x1 = x1_c,
+                                   y0 = y0_c, y1 = y1_c,
+                                   col = colors[mask]
+                                 )
+                               }
+                             } else {
+                               # y: integer positions scaled through yscale
+                               # For discrete yscale = c(0.5, N+0.5),
+                               # each tile spans (idx - 0.5) to (idx + 0.5)
+                               y0_data <- y_idx[mask] - 0.5
+                               y1_data <- y_idx[mask] + 0.5
+                               v0 <- (y0_data - panel$yscale[1]) / diff(panel$yscale)
+                               v1 <- (y1_data - panel$yscale[1]) / diff(panel$yscale)
+                               v0 <- pmax(pmin(v0, 1), 0)
+                               v1 <- pmax(pmin(v1, 1), 0)
+
+                               # canvas coordinates
+                               x0_c <- panel$inner$x0 + u0 * (panel$inner$x1 - panel$inner$x0)
+                               x1_c <- panel$inner$x0 + u1 * (panel$inner$x1 - panel$inner$x0)
+                               y0_c <- panel$inner$y0 + v0 * (panel$inner$y1 - panel$inner$y0)
+                               y1_c <- panel$inner$y0 + v1 * (panel$inner$y1 - panel$inner$y0)
+
+                               self$coordCanvas[[w]] <- data.frame(
+                                 x0 = x0_c, x1 = x1_c,
+                                 y0 = y0_c, y1 = y1_c,
+                                 col = colors[mask]
+                               )
+                             }
                            }
 
                            invisible()
@@ -1168,11 +1271,17 @@ SeqSegment <- R6::R6Class(
     #' @param y0Col Column name in `gr` for lower y-values (optional).
     #' @param y1Col Column name in `gr` for upper y-values (optional).
     #' @param aesthetics Optional list of aesthetic overrides.
-    initialize = function(gr, yCol = NULL, y0Col = NULL, y1Col = NULL,
+    initialize = function(gr = NULL, x = NULL, yCol = NULL, y0Col = NULL, y1Col = NULL,
                           aesthetics = list(), aes = NULL, scale = NULL) {
-      stopifnot(inherits(gr, "GRanges"))
-      self$gr <- gr
-      self$coordOriginal <- gr
+      if (!is.null(x)) {
+        stopifnot(inherits(x, "GRanges"))
+        gr_use <- x
+      } else {
+        stopifnot(inherits(gr, "GRanges"))
+        gr_use <- gr
+      }
+      self$gr <- gr_use
+      self$coordOriginal <- gr_use
       self$yCol <- yCol
       self$y0Col <- y0Col
       self$y1Col <- y1Col
@@ -1347,26 +1456,32 @@ SeqRect <- R6::R6Class("SeqRect",
                          #' @param yCol Optional column name in `gr` used for rectangle y-centers.
                          #' @param aesthetics Optional list of aesthetic overrides.
                          #' @return A new `SeqRect` object.
-                         initialize = function(gr, yCol = NULL, aesthetics = list(),
+                         initialize = function(gr = NULL, x = NULL, yCol = NULL, aesthetics = list(),
                                                aes = NULL, scale = NULL) {
-                           stopifnot(inherits(gr, "GRanges"))
-                           self$gr <- gr
+                           if (!is.null(x)) {
+                             stopifnot(inherits(x, "GRanges"))
+                             gr_use <- x
+                           } else {
+                             stopifnot(inherits(gr, "GRanges"))
+                             gr_use <- gr
+                           }
+                           self$gr <- gr_use
                            self$yCol <- yCol
                            self$aesthetics <- modifyList(self$defaultAesthetics, aesthetics)
 
-                           y_center <- if (!is.null(yCol) && yCol %in% names(mcols(gr))) {
-                             as.numeric(mcols(gr)[[yCol]])
+                           y_center <- if (!is.null(yCol) && yCol %in% names(mcols(gr_use))) {
+                             as.numeric(mcols(gr_use)[[yCol]])
                            } else {
-                             rep(0.5, length(gr))
+                             rep(0.5, length(gr_use))
                            }
 
                            self$y <- y_center
 
                            if (!is.null(aes)) {
                              resolved <- .resolve_aes(
-                               data_mcols    = as.data.frame(S4Vectors::mcols(gr)),
+                               data_mcols    = as.data.frame(S4Vectors::mcols(gr_use)),
                                aes_obj       = aes, scale_obj = scale,
-                               n             = length(gr), default_color = "#1C1B1A"
+                               n             = length(gr_use), default_color = "#1C1B1A"
                              )
                              for (nm in names(resolved)) self$aesthetics[[nm]] <- resolved[[nm]]
                            }
@@ -1551,26 +1666,32 @@ SeqBar <- R6::R6Class("SeqBar",
                         #' @param groupLevels Optional vector of group levels to enforce order.
                         #' @param aesthetics Optional list of aesthetic overrides.
                         #' @return A new `SeqBar` object.
-                        initialize = function(gr, yCol = NULL, groupCol = NULL,
+                        initialize = function(gr = NULL, x = NULL, yCol = NULL, groupCol = NULL,
                                               groupLevels = NULL, aesthetics = list(),
                                               aes = NULL, scale = NULL) {
-                          stopifnot(inherits(gr, "GRanges"))
-                          self$gr <- gr
+                          if (!is.null(x)) {
+                            stopifnot(inherits(x, "GRanges"))
+                            gr_use <- x
+                          } else {
+                            stopifnot(inherits(gr, "GRanges"))
+                            gr_use <- gr
+                          }
+                          self$gr <- gr_use
                           self$yCol <- yCol
                           self$groupCol <- groupCol
                           self$groupLevels <- groupLevels
                           self$aesthetics <- modifyList(self$defaultAesthetics, aesthetics)
 
-                          self$y <- if (!is.null(yCol) && yCol %in% names(mcols(gr))) {
-                            as.numeric(mcols(gr)[[yCol]])
+                          self$y <- if (!is.null(yCol) && yCol %in% names(mcols(gr_use))) {
+                            as.numeric(mcols(gr_use)[[yCol]])
                           } else {
-                            rep(1, length(gr))
+                            rep(1, length(gr_use))
                           }
 
-                          self$group <- if (!is.null(groupCol) && groupCol %in% names(mcols(gr))) {
-                            as.character(mcols(gr)[[groupCol]])
+                          self$group <- if (!is.null(groupCol) && groupCol %in% names(mcols(gr_use))) {
+                            as.character(mcols(gr_use)[[groupCol]])
                           } else {
-                            rep("default", length(gr))
+                            rep("default", length(gr_use))
                           }
 
                           if (!is.null(groupLevels)) {
@@ -1799,17 +1920,23 @@ SeqLine <- R6::R6Class("SeqLine",
                          #' @param yCol Optional column name in `gr` for y-values.
                          #' @param aesthetics Optional list of aesthetic overrides.
                          #' @return A new `SeqLine` object.
-                         initialize = function(gr, yCol = NULL, aesthetics = list(),
+                         initialize = function(gr = NULL, x = NULL, yCol = NULL, aesthetics = list(),
                                                aes = NULL, scale = NULL) {
-                           stopifnot(inherits(gr, "GRanges"))
-                           self$gr <- gr
-                           self$coordOriginal <- gr
+                           if (!is.null(x)) {
+                             stopifnot(inherits(x, "GRanges"))
+                             gr_use <- x
+                           } else {
+                             stopifnot(inherits(gr, "GRanges"))
+                             gr_use <- gr
+                           }
+                           self$gr <- gr_use
+                           self$coordOriginal <- gr_use
                            self$yCol <- yCol
 
-                           if (!is.null(yCol) && yCol %in% names(mcols(gr))) {
-                             self$y <- as.numeric(mcols(gr)[[yCol]])
+                           if (!is.null(yCol) && yCol %in% names(mcols(gr_use))) {
+                             self$y <- as.numeric(mcols(gr_use)[[yCol]])
                            } else {
-                             self$y <- rep(0.5, length(gr))
+                             self$y <- rep(0.5, length(gr_use))
                            }
 
                            self$aesthetics <- modifyList(self$defaultAesthetics, aesthetics)
@@ -1965,11 +2092,17 @@ SeqArea <- R6::R6Class("SeqArea",
                          #' @param groupLevels Optional vector of group levels to enforce order.
                          #' @param aesthetics Optional list of aesthetic overrides.
                          #' @return A new `SeqArea` object.
-                         initialize = function(gr, yCol = NULL, groupCol = NULL,
+                         initialize = function(gr = NULL, x = NULL, yCol = NULL, groupCol = NULL,
                                                groupLevels = NULL, aesthetics = list(),
                                                aes = NULL, scale = NULL) {
-                           stopifnot(inherits(gr, "GRanges"))
-                           self$gr <- gr
+                           if (!is.null(x)) {
+                             stopifnot(inherits(x, "GRanges"))
+                             gr_use <- x
+                           } else {
+                             stopifnot(inherits(gr, "GRanges"))
+                             gr_use <- gr
+                           }
+                           self$gr <- gr_use
                            self$yCol <- yCol
                            self$groupCol <- groupCol
                            self$groupLevels <- groupLevels
@@ -2176,7 +2309,7 @@ SeqString <- R6::R6Class("SeqString",
                                                  orientation = "*") {
 
                              super$initialize(
-                               gr1 = gr1, gr2 = gr2,
+                               gr1 = gr1, gr2 = gr2, x1 = x1, x2 = x2,
                                t0 = t0, t1 = t1,
                                y0 = y0, y1 = y1,
                                color = color,
@@ -2383,8 +2516,10 @@ SeqLink <- R6::R6Class("SeqLink",
                          #' @description
                          #' Create a new `SeqLink` object.
                          #'
-                         #' @param gr1 A `GRanges` object giving start positions of links.
-                         #' @param gr2 A `GRanges` object giving end positions of links.
+                         #' @param gr1 Deprecated start positions; use `x1` instead.
+                         #' @param gr2 Deprecated end positions; use `x2` instead.
+                         #' @param x1 Preferred: `GRanges` object giving start positions of links.
+                         #' @param x2 Preferred: `GRanges` object giving end positions of links.
                          #' @param t0 Integer or vector giving track indices for start loci (default: `0`).
                          #' @param t1 Integer or vector giving track indices for end loci (default: `0`).
                          #' @param y0 Numeric or vector giving vertical start positions (default: `0`).
@@ -2393,17 +2528,28 @@ SeqLink <- R6::R6Class("SeqLink",
                          #' @param orientation Character or vector specifying link orientation
                          #'   (default: `"*"`).
                          #' @return A new `SeqLink` object.
-                         initialize = function(gr1, gr2, t0 = 0, t1 = 0,
+                         initialize = function(gr1 = NULL, gr2 = NULL, x1 = NULL, x2 = NULL, t0 = 0, t1 = 0,
                                                y0 = 0, y1 = 0,
                                                color = "black", orientation = "*") {
-                           stopifnot(length(gr1) == length(gr2))
-                           self$gr1 <- gr1
-                           self$gr2 <- gr2
-                           self$t0 <- rep(t0, length(gr1))
-                           self$t1 <- rep(t1, length(gr1))
-                           self$y0 <- rep(y0, length(gr1))
-                           self$y1 <- rep(y1, length(gr2))
-                           self$orientation <- rep(orientation, length(gr1))
+                           # Accept x1/x2 (preferred) or legacy gr1/gr2
+                           if (!is.null(x1)) {
+                             gr1_use <- x1
+                           } else {
+                             gr1_use <- gr1
+                           }
+                           if (!is.null(x2)) {
+                             gr2_use <- x2
+                           } else {
+                             gr2_use <- gr2
+                           }
+                           stopifnot(length(gr1_use) == length(gr2_use))
+                           self$gr1 <- gr1_use
+                           self$gr2 <- gr2_use
+                           self$t0 <- rep(t0, length(gr1_use))
+                           self$t1 <- rep(t1, length(gr1_use))
+                           self$y0 <- rep(y0, length(gr1_use))
+                           self$y1 <- rep(y1, length(gr2_use))
+                           self$orientation <- rep(orientation, length(gr1_use))
                          }
                        )
 )
@@ -2471,8 +2617,10 @@ SeqArch <- R6::R6Class("SeqArch",
                          #' @description
                          #' Create a new `SeqArch` object.
                          #'
-                         #' @param gr1 A `GRanges` object giving start positions of links.
-                         #' @param gr2 A `GRanges` object giving end positions of links.
+                         #' @param gr1 Deprecated; use `x1` instead.
+                         #' @param gr2 Deprecated; use `x2` instead.
+                         #' @param x1 Preferred: `GRanges` object giving start positions of arches.
+                         #' @param x2 Preferred: `GRanges` object giving end positions of arches.
                          #' @param t0 Integer or vector giving track indices for start loci (default: `0`).
                          #' @param t1 Integer or vector giving track indices for end loci (default: `0`).
                          #' @param y0 Numeric or vector giving vertical start positions (default: `0`).
@@ -2483,11 +2631,11 @@ SeqArch <- R6::R6Class("SeqArch",
                          #' @param curve Character or vector specifying curvature mode (`"length"`, `"equal"`, or numeric).
                          #' @param aesthetics List of aesthetics for stems, arches, and stubs.
                          #' @return A new `SeqArch` object.
-                         initialize = function(gr1, gr2, t0 = 0, t1 = 0,
+                         initialize = function(gr1 = NULL, gr2 = NULL, x1 = NULL, x2 = NULL, t0 = 0, t1 = 0,
                                                y0 = 0, y1 = 0, yCol = NULL, orientation = "*",
                                                height = 1, curve = "length", aesthetics = list()) {
 
-                           super$initialize(gr1 = gr1, gr2 = gr2, t0 = t0, t1 = t1, y0 = y0, y1 = y1,
+                           super$initialize(gr1 = gr1, gr2 = gr2, x1 = x1, x2 = x2, t0 = t0, t1 = t1, y0 = y0, y1 = y1,
                                             color = aesthetics$color %||% "black", orientation = orientation)
 
                            if (!is.null(yCol) && yCol %in% names(mcols(gr1))) {
@@ -2933,8 +3081,10 @@ SeqRecon <- R6::R6Class("SeqRecon",
                           #' @description
                           #' Create a new `SeqRecon` object.
                           #'
-                          #' @param gr1 A `GRanges` object with start loci.
-                          #' @param gr2 A `GRanges` object with end loci.
+                          #' @param gr1 Deprecated start loci; use `x1` instead.
+                          #' @param gr2 Deprecated end loci; use `x2` instead.
+                          #' @param x1 Preferred: `GRanges` object with start loci.
+                          #' @param x2 Preferred: `GRanges` object with end loci.
                           #' @param yCol Optional column name for custom arch heights.
                           #' @param y0,y1 Numeric start and end y-values (default: `0`).
                           #' @param t0,t1 Track indices for start and end loci (default: `0` → current track).
@@ -2943,7 +3093,7 @@ SeqRecon <- R6::R6Class("SeqRecon",
                           #' @param drawClasses Which class tiers to render.
                           #' @param aesthetics List of aesthetic overrides (colors, widths, etc.).
                           #' @return A new `SeqRecon` object.
-                          initialize = function(gr1, gr2,
+                          initialize = function(gr1 = NULL, gr2 = NULL, x1 = NULL, x2 = NULL,
                                                 yCol = NULL,
                                                 y0 = 0, y1 = 0,
                                                 t0 = 0, t1 = 0,
@@ -2961,6 +3111,8 @@ SeqRecon <- R6::R6Class("SeqRecon",
                             super$initialize(
                               gr1        = gr1,
                               gr2        = gr2,
+                              x1         = x1,
+                              x2         = x2,
                               t0         = t0,
                               t1         = t1,
                               y0         = 0,
@@ -3383,7 +3535,8 @@ SeqGene <- R6::R6Class("SeqGene",
                          #' @description
                          #' Create a new `SeqGene` object.
                          #'
-                         #' @param gr A `GRanges` object of exons with metadata columns for
+                         #' @param gr Deprecated; use `x` instead.
+                         #' @param x Preferred: A `GRanges` object of exons with metadata columns for
                          #'   gene ID and (optionally) strand.
                          #' @param geneCol Metadata column giving the gene ID (default `"gene_name"`).
                          #' @param genesFilter Optional vector of gene IDs to keep.
@@ -3392,21 +3545,29 @@ SeqGene <- R6::R6Class("SeqGene",
                          #' @param colorCol Optional column for per-gene colors.
                          #' @param shape Shape for exon boxes (`"rect"` by default).
                          #' @return A new `SeqGene` object.
-                         initialize = function(gr,
+                         initialize = function(gr = NULL,
+                                               x = NULL,
                                                geneCol     = "gene_name",
                                                genesFilter = NULL,
                                                strandCol   = NULL,
                                                color       = "gray30",
                                                colorCol    = NULL,
                                                shape       = "rect") {
-                           stopifnot(inherits(gr,"GRanges"))
-                           self$gr          <- gr
+                           if (!is.null(x)) {
+                             stopifnot(inherits(x, "GRanges"))
+                             gr_use <- x
+                           } else {
+                             stopifnot(inherits(gr, "GRanges"))
+                             gr_use <- gr
+                           }
+                           self$gr          <- gr_use
                            self$geneCol     <- geneCol
                            self$genesFilter <- genesFilter
                            self$strandCol   <- strandCol
                            self$color       <- color
                            self$colorCol    <- colorCol
                            self$shape       <- shape
+                           self$coordOriginal <- gr_use
                          },
 
                          #' @description
@@ -4175,6 +4336,13 @@ SeqTrack <- R6::R6Class("SeqTrack",
                           #'   or `NULL`). If `NULL`, auto-inferred from element data.
                           scale_y = NULL,
 
+                          #' @field y_windows Optional `GRanges` defining genomic y-axis windows
+                          #'   when the track uses a genomic y-axis (for 2D plots).
+                          y_windows = NULL,
+                          #' @field uses_genomic_y Logical flag indicating whether elements in
+                          #'   this track use genomic y-axis (`gr_y` provided).
+                          uses_genomic_y = FALSE,
+
                           #' @field aesthetics A named list of aesthetics controlling axis
                           #'   rendering and labeling:
                           #'   \describe{
@@ -4212,6 +4380,7 @@ SeqTrack <- R6::R6Class("SeqTrack",
                           #' @return A new `SeqTrack` object.
                           initialize = function(elements = list(),
                                                 windows = NULL,
+                                                y_windows = NULL,
                                                 scale_x = NULL,
                                                 scale_y = NULL,
                                                 aesthetics = list(
@@ -4240,7 +4409,19 @@ SeqTrack <- R6::R6Class("SeqTrack",
                               self$windows <- scale_x$windows
                             }
 
-                            self$scale_y <- scale_y
+                            # y_windows sugar for genomic y-axis
+                            if (!is.null(y_windows) && is.null(scale_y)) {
+                              self$y_windows <- y_windows
+                              self$scale_y <- seq_scale_genomic(y_windows)
+                            } else if (!is.null(scale_y)) {
+                              self$scale_y <- scale_y
+                              if (inherits(scale_y, "SeqScaleGenomic")) self$y_windows <- scale_y$windows
+                            }
+
+                            # track-level flag: whether elements in this track use genomic y
+                            self$uses_genomic_y <- any(vapply(elements, function(e) !is.null(e$gr_y), logical(1)))
+                            self$elements <- elements
+                            self$aesthetics <- aesthetics
                           },
 
                           #' @description
@@ -4249,7 +4430,25 @@ SeqTrack <- R6::R6Class("SeqTrack",
                           #' @param feature A `SeqElement` object to be appended to the track.
                           #' @return Updates the `elements` field with the new feature.
                           addElement = function(feature) {
+                            if (!inherits(feature, "SeqElement")) stop("feature must be a SeqElement")
+
+                            # Only SeqTile may provide genomic ranges for both axes
+                            if (!is.null(feature$gr_y) && !inherits(feature, "SeqTile")) {
+                              stop("Only SeqTile may have GRanges on both x and y axes.")
+                            }
+
+                            # Enforce consistency: all elements must agree on whether
+                            # they use genomic y-axis (i.e., provide `gr_y`) or not.
+                            if (length(self$elements) > 0) {
+                              existing_genomic_y <- self$uses_genomic_y
+                              new_genomic_y <- !is.null(feature$gr_y)
+                              if (existing_genomic_y != new_genomic_y) {
+                                stop("All elements in a SeqTrack must either all use genomic y-axis (provide `y=` GRanges) or none do.")
+                              }
+                            }
+
                             self$elements <- append(self$elements, list(feature))
+                            self$uses_genomic_y <- any(vapply(self$elements, function(e) !is.null(e$gr_y), logical(1)))
                           }
                         )
 )
@@ -4440,6 +4639,31 @@ SeqPlot <- R6Class("SeqPlot",
                          n_windows <- length(track$windows)
                          sy <- track$scale_y
 
+                         # --- Check for genomic y_windows first (highest priority) ---
+                         if (!is.null(track$y_windows) && track$uses_genomic_y) {
+                           # Genomic y-axis from y_windows
+                           n_y_win <- length(track$y_windows)
+                           # If single y_window, apply to all x-windows; otherwise paired
+                           if (n_y_win == n_windows) {
+                             # Per-window y_windows
+                             for (yw_idx in seq_len(n_y_win)) {
+                               y_range <- c(start(track$y_windows)[yw_idx], end(track$y_windows)[yw_idx])
+                               yscales <- c(yscales, list(y_range))
+                             }
+                           } else if (n_y_win == 1) {
+                             # Single y_window applies to all x-windows
+                             y_range <- c(start(track$y_windows)[1], end(track$y_windows)[1])
+                             yscales <- c(yscales, rep(list(y_range), n_windows))
+                           } else {
+                             # Multiple y-windows apply to all x-windows (2D grid layout).
+                             # y_sub_panels will handle per-window positioning; here just compute overall range.
+                             y_overall <- c(min(GenomicRanges::start(track$y_windows)), 
+                                           max(GenomicRanges::end(track$y_windows)))
+                             yscales <- c(yscales, rep(list(y_overall), n_windows))
+                           }
+                           next
+                         }
+
                          # --- Dispatch on explicit scale_y ---
                          if (!is.null(sy) && sy$type == "genomic") {
                            y_range <- c(min(GenomicRanges::start(sy$windows)),
@@ -4610,6 +4834,36 @@ SeqPlot <- R6Class("SeqPlot",
                          grid_meta[[t]] <- vector("list", nWin)
                          x_left <- margins$left
 
+                         # Pre-compute y_sub_panels for multiple y-windows
+                         track <- self$tracks[[t]]
+                         y_sub_panels_template <- NULL
+                         if (!is.null(track$y_windows) && track$uses_genomic_y && length(track$y_windows) > 1) {
+                           # Create y-sub-panels for the multiple y-windows
+                           y_win_all <- track$y_windows
+                           n_yw <- length(y_win_all)
+                           if (!"scale" %in% names(mcols(y_win_all))) {
+                             mcols(y_win_all)$scale <- rep(1e-6, n_yw)
+                           }
+                           y_win_gap <- track$aesthetics$yWindowGap %||% 0
+                           total_y_gap <- y_win_gap * (n_yw - 1)
+                           raw_h <- width(y_win_all) * mcols(y_win_all)$scale
+                           avail_h <- (y_top_track - y_bottom_track) - total_y_gap
+                           rel_h <- (raw_h / sum(raw_h)) * avail_h
+                           y_sub_panels_template <- vector("list", n_yw)
+                           y_cur <- y_bottom_track
+                           for (yw in seq_len(n_yw)) {
+                             sub_y0 <- y_cur
+                             sub_y1 <- y_cur + rel_h[yw]
+                             y_sub_panels_template[[yw]] <- list(
+                               y0 = sub_y0, y1 = sub_y1,
+                               yscale = c(start(y_win_all)[yw], end(y_win_all)[yw]),
+                               yScaleFactor = mcols(y_win_all)$scale[[yw]],
+                               y_seqname = as.character(seqnames(y_win_all)[yw])
+                             )
+                             y_cur <- sub_y1 + y_win_gap
+                           }
+                         }
+
                          for (w in seq_len(nWin)) {
                            w_width <- winFrac[w] * availWinWidth
                            x0_win <- x_left
@@ -4621,8 +4875,6 @@ SeqPlot <- R6Class("SeqPlot",
                              y0 = y_bottom_track,
                              y1 = y_top_track
                            )
-
-                           track <- self$tracks[[t]]
 
                            # --- NEW: compute per-window x data range and expand it
                            x_data <- c(start(track$windows)[w], end(track$windows)[w])
@@ -4645,14 +4897,21 @@ SeqPlot <- R6Class("SeqPlot",
                              xScaleFactor = mcols(track$windows)$scale[[w]],
                              # scale type metadata
                              x_scale_type = if (!is.null(track$scale_x)) track$scale_x$type else "genomic",
-                             y_scale_type = if (!is.null(track$scale_y)) track$scale_y$type else "continuous",
+                             y_scale_type = if (!is.null(track$y_windows) && track$uses_genomic_y) "genomic"
+                                            else if (!is.null(track$scale_y)) track$scale_y$type
+                                            else "continuous",
                              y_levels     = if (!is.null(track$scale_y) && track$scale_y$type == "discrete")
                                               track$scale_y$levels else NULL,
                              y_labels     = if (!is.null(track$scale_y) && track$scale_y$type == "discrete")
                                               (track$scale_y$labels %||% track$scale_y$levels) else NULL,
-                             yScaleFactor = if (!is.null(track$scale_y) && track$scale_y$type == "genomic")
+                             yScaleFactor = if (!is.null(track$y_windows) && track$uses_genomic_y) {
+                                              # Get per-window scale factor from y_windows metadata
+                                              mcols(track$y_windows)$scale[[min(w, length(track$y_windows))]]
+                                            } else if (!is.null(track$scale_y) && track$scale_y$type == "genomic") {
                                               track$scale_y$scale_factor[min(w, length(track$scale_y$scale_factor))]
-                                            else NULL
+                                            } else NULL,
+                             y_is_genomic = !is.null(track$y_windows) && track$uses_genomic_y,
+                             y_sub_panels = y_sub_panels_template
                            )
 
                            if (w < nWin && length(gap_vec) >= w) {
@@ -4725,19 +4984,53 @@ SeqPlot <- R6Class("SeqPlot",
                            xscale <- win$xscale
                            yscale <- win$yscale
 
-                           # Draw window panel backgrounds inside the track
-                           grid.rect(
-                             x      = unit(p$x0, "npc"),
-                             y      = unit(p$y0, "npc"),
-                             width  = unit(p$x1 - p$x0, "npc"),
-                             height = unit(p$y1 - p$y0, "npc"),
-                             just   = c("left", "bottom"),
-                             gp     = gpar(
-                               fill = trackAesthetics$windowBackground,
-                               col = NA,
-                               lwd = 0.5
+                           if (!is.null(win$y_sub_panels)) {
+                             # Multiple y-windows: draw sub-panel backgrounds and borders
+                             for (sub in win$y_sub_panels) {
+                               grid.rect(
+                                 x = unit(p$x0, "npc"), y = unit(sub$y0, "npc"),
+                                 width = unit(p$x1 - p$x0, "npc"), height = unit(sub$y1 - sub$y0, "npc"),
+                                 just = c("left", "bottom"),
+                                 gp = gpar(fill = trackAesthetics$windowBackground, col = NA, lwd = 0.5)
+                               )
+                             }
+                             for (sub in win$y_sub_panels) {
+                               grid.rect(
+                                 x = unit(p$x0, "npc"), y = unit(sub$y0, "npc"),
+                                 width = unit(p$x1 - p$x0, "npc"), height = unit(sub$y1 - sub$y0, "npc"),
+                                 just = c("left", "bottom"),
+                                 gp = gpar(fill = NA, col = trackAesthetics$windowBorder, lwd = 1)
+                               )
+                             }
+                           } else {
+                             # Draw window panel background inside the track
+                             grid.rect(
+                               x      = unit(p$x0, "npc"),
+                               y      = unit(p$y0, "npc"),
+                               width  = unit(p$x1 - p$x0, "npc"),
+                               height = unit(p$y1 - p$y0, "npc"),
+                               just   = c("left", "bottom"),
+                               gp     = gpar(
+                                 fill = trackAesthetics$windowBackground,
+                                 col = NA,
+                                 lwd = 0.5
+                               )
                              )
-                           )
+
+                             # Draw window panel borders inside the track
+                             grid.rect(
+                               x      = unit(p$x0, "npc"),
+                               y      = unit(p$y0, "npc"),
+                               width  = unit(p$x1 - p$x0, "npc"),
+                               height = unit(p$y1 - p$y0, "npc"),
+                               just   = c("left", "bottom"),
+                               gp     = gpar(
+                                 fill = NA,
+                                 col = trackAesthetics$windowBorder,
+                                 lwd = 1
+                               )
+                             )
+                           }
 
                            # Draw window x breaks over the background
                            if (isTRUE(trackAesthetics$xAxisBreakLines)) {
@@ -4766,18 +5059,22 @@ SeqPlot <- R6Class("SeqPlot",
                            }
 
                            # Draw window panel borders inside the track
-                           grid.rect(
-                             x      = unit(p$x0, "npc"),
-                             y      = unit(p$y0, "npc"),
-                             width  = unit(p$x1 - p$x0, "npc"),
-                             height = unit(p$y1 - p$y0, "npc"),
-                             just   = c("left", "bottom"),
-                             gp     = gpar(
-                               fill = NA,
-                               col = trackAesthetics$windowBorder,
-                               lwd = 1
+                           # Only draw outer border when no y_sub_panels exist;
+                           # individual sub-panel borders drawn above in the y_sub_panels loop
+                           if (is.null(win$y_sub_panels)) {
+                             grid.rect(
+                               x      = unit(p$x0, "npc"),
+                               y      = unit(p$y0, "npc"),
+                               width  = unit(p$x1 - p$x0, "npc"),
+                               height = unit(p$y1 - p$y0, "npc"),
+                               just   = c("left", "bottom"),
+                               gp     = gpar(
+                                 fill = NA,
+                                 col = trackAesthetics$windowBorder,
+                                 lwd = 1
+                               )
                              )
-                           )
+                           }
                          }
                        }
 
@@ -5091,55 +5388,106 @@ SeqPlot <- R6Class("SeqPlot",
                            draw_y_here <- isTRUE(trackAesthetics$yAxisLine) &&
                              (isTRUE(trackAesthetics$yAxisPerWindow) || win$window == 1)
 
-                           if (draw_y_here && !is.null(y_meta$axis_range)) {
-                             y0_line <- map_y_npc(y_meta$axis_range[1])
-                             y1_line <- map_y_npc(y_meta$axis_range[2])
-                             grid.lines(
-                               x = unit(c(p$x0, p$x0), "npc"),
-                               y = unit(c(y0_line, y1_line), "npc"),
-                               gp = gpar(col = trackAesthetics$axisColor, lwd = 1)
-                             )
-                           }
-
-                           if (isTRUE(trackAesthetics$yAxisTicks) &&
-                               (isTRUE(trackAesthetics$yAxisPerWindow) || win$window == 1) &&
-                               length(y_meta$breaks)) {
-
-                             # minor ticks (drawn once, outside major tick loop)
-                             if (!is.null(y_meta$minor_breaks) && length(y_meta$minor_breaks)) {
-                               for (mb in y_meta$minor_breaks) {
-                                 ypos_mb <- map_y_npc(mb)
+                           if (!is.null(win$y_sub_panels) && draw_y_here) {
+                             # Multiple y-windows: draw axis per sub-panel
+                             for (sub in win$y_sub_panels) {
+                               sf_y <- sub$yScaleFactor %||% 1e-6
+                               unit_label_y <- .axis_unit_label(sf_y)
+                               sub_y_meta <- make_axis_meta(
+                                 plot_range   = sub$yscale,
+                                 data_range   = sub$yscale,
+                                 manual_breaks = trackAesthetics$yAxisBreaks,
+                                 n            = trackAesthetics$yAxisNBreaks,
+                                 cap          = trackAesthetics$yAxisCap,
+                                 minor_breaks = trackAesthetics$yMinorBreaks
+                               )
+                               map_sub_y <- function(val) {
+                                 (val - sub$yscale[1]) / diff(sub$yscale) * (sub$y1 - sub$y0) + sub$y0
+                               }
+                               if (isTRUE(trackAesthetics$yAxisLine) && !is.null(sub_y_meta$axis_range)) {
                                  grid.lines(
-                                   x = unit(c(p$x0, p$x0 - trackAesthetics$tickLengthNPC * 0.6), "npc"),
-                                   y = unit(c(ypos_mb, ypos_mb), "npc"),
-                                   gp = gpar(col = trackAesthetics$axisColor, lwd = 0.5)
+                                   x = unit(c(p$x0, p$x0), "npc"),
+                                   y = unit(c(map_sub_y(sub_y_meta$axis_range[1]),
+                                              map_sub_y(sub_y_meta$axis_range[2])), "npc"),
+                                   gp = gpar(col = trackAesthetics$axisColor, lwd = 1)
                                  )
                                }
+                               if (isTRUE(trackAesthetics$yAxisTicks) && length(sub_y_meta$breaks)) {
+                                 scaled_y_vals <- sub_y_meta$breaks * sf_y
+                                 ylabels <- .axis_format_num(scaled_y_vals)
+                                 if (length(ylabels) > 0) {
+                                   ylabels[length(ylabels)] <- paste0(ylabels[length(ylabels)], " ", unit_label_y)
+                                 }
+                                 for (i in seq_along(sub_y_meta$breaks)) {
+                                   ypos <- map_sub_y(sub_y_meta$breaks[i])
+                                   grid.lines(
+                                     x = unit(c(p$x0, p$x0 - trackAesthetics$tickLengthNPC), "npc"),
+                                     y = unit(c(ypos, ypos), "npc"),
+                                     gp = gpar(col = trackAesthetics$axisColor, lwd = 1)
+                                   )
+                                   if (isTRUE(trackAesthetics$yAxisLabels)) {
+                                     grid.text(
+                                       label = ylabels[i],
+                                       x = unit(p$x0 - trackAesthetics$yLabelOffsetNPC, "npc"),
+                                       y = unit(ypos, "npc"),
+                                       just = "right",
+                                       gp = gpar(cex = trackAesthetics$yAxisLabelSize)
+                                     )
+                                   }
+                                 }
+                               }
                              }
-
-                             for (i in seq_along(y_meta$breaks)) {
-                               ypos <- map_y_npc(y_meta$breaks[i])
-
-                               # major tick
+                           } else {
+                             if (draw_y_here && !is.null(y_meta$axis_range)) {
+                               y0_line <- map_y_npc(y_meta$axis_range[1])
+                               y1_line <- map_y_npc(y_meta$axis_range[2])
                                grid.lines(
-                                 x = unit(c(p$x0, p$x0 - trackAesthetics$tickLengthNPC), "npc"),
-                                 y = unit(c(ypos, ypos), "npc"),
+                                 x = unit(c(p$x0, p$x0), "npc"),
+                                 y = unit(c(y0_line, y1_line), "npc"),
                                  gp = gpar(col = trackAesthetics$axisColor, lwd = 1)
                                )
+                             }
 
-                               # label
-                               if (isTRUE(trackAesthetics$yAxisLabels)) {
-                                 y_lab_text <- if (!is.null(y_meta$labels) && i <= length(y_meta$labels))
-                                   y_meta$labels[i]
-                                 else
-                                   .axis_format_num(y_meta$breaks[i])
-                                 grid.text(
-                                   label = y_lab_text,
-                                   x = unit(p$x0 - trackAesthetics$yLabelOffsetNPC, "npc"),
-                                   y = unit(ypos, "npc"),
-                                   just = "right",
-                                   gp = gpar(cex = trackAesthetics$yAxisLabelSize)
+                             if (isTRUE(trackAesthetics$yAxisTicks) &&
+                                 (isTRUE(trackAesthetics$yAxisPerWindow) || win$window == 1) &&
+                                 length(y_meta$breaks)) {
+
+                               # minor ticks (drawn once, outside major tick loop)
+                               if (!is.null(y_meta$minor_breaks) && length(y_meta$minor_breaks)) {
+                                 for (mb in y_meta$minor_breaks) {
+                                   ypos_mb <- map_y_npc(mb)
+                                   grid.lines(
+                                     x = unit(c(p$x0, p$x0 - trackAesthetics$tickLengthNPC * 0.6), "npc"),
+                                     y = unit(c(ypos_mb, ypos_mb), "npc"),
+                                     gp = gpar(col = trackAesthetics$axisColor, lwd = 0.5)
+                                   )
+                                 }
+                               }
+
+                               for (i in seq_along(y_meta$breaks)) {
+                                 ypos <- map_y_npc(y_meta$breaks[i])
+
+                                 # major tick
+                                 grid.lines(
+                                   x = unit(c(p$x0, p$x0 - trackAesthetics$tickLengthNPC), "npc"),
+                                   y = unit(c(ypos, ypos), "npc"),
+                                   gp = gpar(col = trackAesthetics$axisColor, lwd = 1)
                                  )
+
+                                 # label
+                                 if (isTRUE(trackAesthetics$yAxisLabels)) {
+                                   y_lab_text <- if (!is.null(y_meta$labels) && i <= length(y_meta$labels))
+                                     y_meta$labels[i]
+                                   else
+                                     .axis_format_num(y_meta$breaks[i])
+                                   grid.text(
+                                     label = y_lab_text,
+                                     x = unit(p$x0 - trackAesthetics$yLabelOffsetNPC, "npc"),
+                                     y = unit(ypos, "npc"),
+                                     just = "right",
+                                     gp = gpar(cex = trackAesthetics$yAxisLabelSize)
+                                   )
+                                 }
                                }
                              }
                            }

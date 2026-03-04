@@ -16,3 +16,9 @@ pak::pak("andrewrlynch/THEfunc")
 ```
 
 ## Usage
+
+## Roadmap
+- [ ] Diagonal heatmap/tile plots
+- [ ] IGV-style reads/read-pairs
+- [ ] Sequence text (limit to 100bp)
+- [ ] General annotation and highlighting features
