@@ -14,9 +14,6 @@ library(GenomicRanges)
 library(IRanges)
 library(grid)
 
-# Load the package
-devtools::load_all()
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Example 1: Simple 2D genomic heatmap (chr1 vs chr2)
 # ══════════════════════════════════════════════════════════════════════════════
