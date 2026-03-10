@@ -7,7 +7,7 @@
 library(GenomicRanges)
 devtools::load_all()
 
-win <- CreateSequenceWindows("chr7:1-159345973")
+win <- createGenomeWindows("chr7:1-159345973")
 
 # Synthetic SNV positions with a numeric score column
 snv <- GRanges(
@@ -53,7 +53,7 @@ tryCatch(
 
 # ── Render ────────────────────────────────────────────────────────────────────
 grid::grid.newpage()
-plt$layoutGrid(trackHeights = c(2, 1))
+plt$layoutGrid()
 plt$drawGrid()
 plt$drawAxes()
 plt$drawElements()

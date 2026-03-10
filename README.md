@@ -18,7 +18,7 @@ pak::pak("andrewrlynch/THEfunc")
 ## Usage
 
 ## Roadmap
-### 0.1
+### 0.2
 - [ ] Diagonal heatmap/tile plots
 - [ ] SeqDensity
 - [ ] IGV-style reads/read-pairs
@@ -28,7 +28,7 @@ pak::pak("andrewrlynch/THEfunc")
 - [ ] Legends
 - [ ] Finalize documentation and examples
 
-### 0.2
+### 0.3
 - [ ] Themes
 - [ ] Polishing axis options (scaling, labels, transforms)
 - [ ] API-improvements for rapid plotting

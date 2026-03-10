@@ -9,7 +9,7 @@
 library(GenomicRanges)
 devtools::load_all()
 
-win <- CreateSequenceWindows("chr17:1-83257441")
+win <- createGenomeWindows("chr17:1-83257441")
 
 set.seed(42)
 n <- 80

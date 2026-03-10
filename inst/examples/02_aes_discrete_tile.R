@@ -9,7 +9,7 @@
 library(GenomicRanges)
 devtools::load_all()
 
-win <- CreateSequenceWindows("chr1:1-100000000")
+win <- createGenomeWindows("chr1:1-100000000")
 
 set.seed(1)
 n_cells  <- 6

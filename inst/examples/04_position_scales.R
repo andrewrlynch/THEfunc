@@ -14,7 +14,7 @@ devtools::load_all()
 # ── seq_scale_genomic() ───────────────────────────────────────────────────────
 
 # Default (1e-6 = Mb)
-win_mb <- CreateSequenceWindows("chr1:1-100000000")
+win_mb <- createGenomeWindows("chr1:1-100000000")
 sg_mb  <- seq_scale_genomic(win_mb)
 stopifnot(inherits(sg_mb, "SeqScaleGenomic"))
 stopifnot(sg_mb$scale_factor == 1e-6)
@@ -26,7 +26,7 @@ stopifnot(sg_kb$scale_factor == 1e-3)
 message("04_position_scales: seq_scale_genomic explicit kb OK")
 
 # Read from mcols$scale
-win_custom         <- CreateSequenceWindows("chr1:1-100000000")
+win_custom         <- createGenomeWindows("chr1:1-100000000")
 mcols(win_custom)$scale <- 1
 sg_bp <- seq_scale_genomic(win_custom)
 stopifnot(sg_bp$scale_factor == 1)
@@ -58,7 +58,7 @@ stopifnot(length(sc_disc$labels) == 5L)
 message("04_position_scales: seq_scale_discrete OK")
 
 # ── Render: one track per scale type ─────────────────────────────────────────
-win <- CreateSequenceWindows("chr1:1-100000000")
+win <- createGenomeWindows("chr1:1-100000000")
 
 set.seed(7)
 n   <- 50
@@ -67,7 +67,7 @@ snv <- GRanges("chr1", IRanges(sort(sample(1:1e8, n)), width = 1),
 
 tile_gr <- GRanges(
   "chr1",
-  IRanges(seq(1, 95e6, by = 5e6), width = 4.5e6),
+  IRanges(seq(1, 100e6, by = 5e6), width = 4.5e6),
   cell_type = rep(cell_types, length.out = 20),
   color     = rep(c("#4E79A7","#F28E2B","#E15759","#76B7B2","#59A14F"), length.out = 20)
 )
