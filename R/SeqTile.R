@@ -41,6 +41,15 @@ SeqTile <- R6::R6Class("SeqTile",
                            lwd = 0.5
                          ),
 
+                         #' @field style Visualization style: "full", "diagonal", "triangle", or "rectangle".
+                         style = NULL,
+
+                         #' @field yCoordType Y-axis coordinate type: "genomic" or "distance".
+                         yCoordType = NULL,
+
+                         #' @field maxDist Maximum genomic distance for clipping.
+                         maxDist = NULL,
+
                          #' @description
                          #' Create a new `SeqTile` object.
                          #' Backwards compatibility: accepts `gr=` or `x=` for primary
@@ -57,9 +66,18 @@ SeqTile <- R6::R6Class("SeqTile",
                          #'   column to discrete y-axis categories and `fill` to map a
                          #'   column to tile fill color.
                          #' @param scale A `SeqScale` color scale for the fill mapping.
+                         #' @param style Visualization style: "full" (default), "diagonal",
+                         #'   "triangle", or "rectangle". Only applies when `y=` GRanges
+                         #'   is provided (2D genomic mode).
+                         #' @param yCoordType Y-axis coordinate type: "genomic" (default) or
+                         #'   "distance". Only used with rotated styles.
+                         #' @param maxDist Maximum genomic distance for clipping. If NULL,
+                         #'   defaults to max(width(y)) for "rectangle" style.
                          initialize = function(gr = NULL, x = NULL, y = NULL,
                                                groupCol = NULL, aesthetics = list(),
-                                               aes = NULL, scale = NULL) {
+                                               aes = NULL, scale = NULL,
+                                               style = "full", yCoordType = "genomic",
+                                               maxDist = NULL) {
                            # resolve primary ranges (x or legacy gr)
                            if (!is.null(x)) {
                              stopifnot(inherits(x, "GRanges"))
@@ -116,6 +134,20 @@ SeqTile <- R6::R6Class("SeqTile",
                            self$gr <- gr_use
                            self$coordOriginal <- gr_use
                            self$aesthetics <- modifyList(self$defaultAesthetics, aesthetics)
+
+                           # Validate and store style parameters
+                           style <- .validate_style_params(style, self$gr_y, maxDist, yCoordType)
+                           self$style <- style
+                           self$yCoordType <- yCoordType
+
+                           # Auto-compute maxDist for rectangle style if needed
+                           if (style == "rectangle" && is.null(maxDist)) {
+                             if (!is.null(self$gr_y)) {
+                               self$maxDist <- max(width(self$gr_y))
+                             }
+                           } else if (!is.null(maxDist)) {
+                             self$maxDist <- maxDist
+                           }
                          },
 
                          #' @description
@@ -125,25 +157,89 @@ SeqTile <- R6::R6Class("SeqTile",
                          prep = function(layout_track, track_windows) {
                            self$coordCanvas <- vector("list", length(track_windows))
 
-                           ov <- GenomicRanges::findOverlaps(self$gr, track_windows)
+                           # For rectangle style, expand x-ranges before overlap detection
+                           search_gr <- self$gr
+                           if (self$style == "rectangle" && !is.null(self$gr_y) && !is.null(self$maxDist)) {
+                             expanded_ranges <- ranges(self$gr)
+                             expanded_ranges <- IRanges::IRanges(
+                               start = pmax(start(expanded_ranges) - self$maxDist, 1),
+                               end = end(expanded_ranges) + self$maxDist
+                             )
+                             search_gr <- GenomicRanges::GRanges(
+                               seqnames = seqnames(self$gr),
+                               ranges = expanded_ranges,
+                               mcols = mcols(self$gr)
+                             )
+                           }
+
+                           ov <- GenomicRanges::findOverlaps(search_gr, track_windows)
                            if (length(ov) == 0) return(invisible())
 
                            qh <- S4Vectors::queryHits(ov)
                            sh <- S4Vectors::subjectHits(ov)
 
+                           # Apply diagonal filtering for 2D mode
+                           if (!is.null(self$gr_y) && self$style != "full") {
+                             diag_mask <- .filter_diagonal_tiles(self$gr, self$gr_y, qh, sh, self$style)
+                             qh <- qh[diag_mask]
+                             sh <- sh[diag_mask]
+                           }
+
                            x0     <- start(self$gr)[qh]
                            x1     <- end(self$gr)[qh]
                            colors <- as.character(mcols(self$gr)$color)[qh]
+
+                           # Store original coordinates before any transformations
+                           x0_orig <- x0
+                           x1_orig <- x1
 
                            # If genomic y provided, compute y0/y1 from gr_y
                            y_idx <- NULL
                            y0_raw <- NULL
                            y1_raw <- NULL
+                           y0_orig <- NULL
+                           y1_orig <- NULL
                            if (!is.null(self$gr_y)) {
                              y0_raw <- start(self$gr_y)[qh]
                              y1_raw <- end(self$gr_y)[qh]
+                             y0_orig <- y0_raw
+                             y1_orig <- y1_raw
                            } else if (!is.null(self$y)) {
                              y_idx <- self$y[qh]
+                           }
+
+                           # Pre-rotation clipping for rectangle style:
+                           # Keep only tiles where x-range overlaps with ORIGINAL unexpanded windows
+                           if (self$style == "rectangle" && !is.null(self$gr_y) && !is.null(self$maxDist)) {
+                             # x0_orig, x1_orig are from unexpanded gr, not from expanded search_gr
+                             # Check which tiles have x-range overlapping with track_windows
+                             rect_mask <- rep(TRUE, length(qh))
+                             for (i in seq_along(unique(sh))) {
+                               w_idx <- unique(sh)[i]
+                               window_range <- track_windows[w_idx]
+                               w_mask <- sh == w_idx
+                               # Keep tiles that overlap with actual window bounds
+                               rect_mask[w_mask] <- end(self$gr)[qh[w_mask]] > start(window_range) &
+                                                    start(self$gr)[qh[w_mask]] < end(window_range)
+                             }
+                             qh <- qh[rect_mask]
+                             sh <- sh[rect_mask]
+                             x0 <- x0[rect_mask]
+                             x1 <- x1[rect_mask]
+                             colors <- colors[rect_mask]
+                             x0_orig <- x0_orig[rect_mask]
+                             x1_orig <- x1_orig[rect_mask]
+                             if (!is.null(y0_orig)) {
+                               y0_orig <- y0_orig[rect_mask]
+                               y1_orig <- y1_orig[rect_mask]
+                             }
+                             if (!is.null(y0_raw)) {
+                               y0_raw <- y0_raw[rect_mask]
+                               y1_raw <- y1_raw[rect_mask]
+                             }
+                             if (!is.null(y_idx)) {
+                               y_idx <- y_idx[rect_mask]
+                             }
                            }
 
                            for (w in unique(sh)) {
@@ -152,16 +248,50 @@ SeqTile <- R6::R6Class("SeqTile",
 
                              panel <- layout_track[[w]]
 
-                             # x: genomic mapping
-                             u0 <- (x0[mask] - panel$xscale[1]) / diff(panel$xscale)
-                             u1 <- (x1[mask] - panel$xscale[1]) / diff(panel$xscale)
+                             # For rotated styles (triangle, rectangle), apply linear coordinate transformation
+                             # in genomic space BEFORE canvas normalization: x_rot = (x+y)/2, y_rot = (y-x)/2
+                             x0_work <- x0[mask]
+                             x1_work <- x1[mask]
+
+                             if (!is.null(y0_raw) && self$style %in% c("triangle", "rectangle")) {
+                               # Apply linear coordinate transformation for 45° rotated styles
+                               y0_work <- y0_raw[mask]
+                               y1_work <- y1_raw[mask]
+
+                               # Transform genomic (x, y) coordinates to rotated space
+                               # x_rot = (x + y) / 2  (represents genomic position)
+                               # y_rot = (y - x) / 2  (represents genomic distance)
+                               x0_rot <- (x0_work + y0_work) / 2
+                               x1_rot <- (x1_work + y1_work) / 2
+                               y0_rot <- (y0_work - x0_work) / 2
+                               y1_rot <- (y1_work - x1_work) / 2
+
+                               x0_work <- x0_rot
+                               x1_work <- x1_rot
+                             } else {
+                               y0_work <- NULL
+                               y1_work <- NULL
+                             }
+
+                             # x: canvas mapping (works with original or transformed coordinates)
+                             u0 <- (x0_work - panel$xscale[1]) / diff(panel$xscale)
+                             u1 <- (x1_work - panel$xscale[1]) / diff(panel$xscale)
                              u0 <- pmax(pmin(u0, 1), 0)
                              u1 <- pmax(pmin(u1, 1), 0)
 
                              if (!is.null(y0_raw)) {
                                # Genomic y-axis
-                               y0_m <- y0_raw[mask]
-                               y1_m <- y1_raw[mask]
+                               # For rotated styles, use already-transformed y0_work, y1_work
+                               if (self$style %in% c("triangle", "rectangle")) {
+                                 # For rotated styles, always use transformed distance coordinates
+                                 # yCoordType is just metadata about axis representation (stored but not used for computation)
+                                 y0_m <- y0_work
+                                 y1_m <- y1_work
+                               } else {
+                                 # Full and diagonal styles: use original genomic coordinates
+                                 y0_m <- y0_raw[mask]
+                                 y1_m <- y1_raw[mask]
+                               }
 
                                if (!is.null(panel$y_sub_panels)) {
                                  # Multiple y-windows: map tiles to appropriate sub-panel
@@ -178,7 +308,11 @@ SeqTile <- R6::R6Class("SeqTile",
                                      x1 = panel$inner$x0 + u1[y_in_sub] * (panel$inner$x1 - panel$inner$x0),
                                      y0 = sub$y0 + v0 * (sub$y1 - sub$y0),
                                      y1 = sub$y0 + v1 * (sub$y1 - sub$y0),
-                                     col = colors[mask][y_in_sub]
+                                     col = colors[mask][y_in_sub],
+                                     x0_orig = x0_orig[mask][y_in_sub],
+                                     x1_orig = x1_orig[mask][y_in_sub],
+                                     y0_orig = y0_orig[mask][y_in_sub],
+                                     y1_orig = y1_orig[mask][y_in_sub]
                                    )
                                  }
                                  self$coordCanvas[[w]] <- do.call(rbind, Filter(Negate(is.null), all_frames))
@@ -198,7 +332,11 @@ SeqTile <- R6::R6Class("SeqTile",
                                  self$coordCanvas[[w]] <- data.frame(
                                    x0 = x0_c, x1 = x1_c,
                                    y0 = y0_c, y1 = y1_c,
-                                   col = colors[mask]
+                                   col = colors[mask],
+                                   x0_orig = x0_orig[mask],
+                                   x1_orig = x1_orig[mask],
+                                   y0_orig = y0_orig[mask],
+                                   y1_orig = y1_orig[mask]
                                  )
                                }
                              } else {
@@ -221,7 +359,11 @@ SeqTile <- R6::R6Class("SeqTile",
                                self$coordCanvas[[w]] <- data.frame(
                                  x0 = x0_c, x1 = x1_c,
                                  y0 = y0_c, y1 = y1_c,
-                                 col = colors[mask]
+                                 col = colors[mask],
+                                 x0_orig = x0_orig[mask],
+                                 x1_orig = x1_orig[mask],
+                                 y0_orig = rep(NA_real_, sum(mask)),
+                                 y1_orig = rep(NA_real_, sum(mask))
                                )
                              }
                            }
@@ -236,18 +378,50 @@ SeqTile <- R6::R6Class("SeqTile",
                            for (w in seq_along(self$coordCanvas)) {
                              coords <- self$coordCanvas[[w]]
                              if (is.null(coords) || nrow(coords) == 0) next
-                             grid.rect(
-                               x = unit((coords$x0 + coords$x1) / 2, "npc"),
-                               y = unit((coords$y0 + coords$y1) / 2, "npc"),
-                               width  = unit(coords$x1 - coords$x0, "npc"),
-                               height = unit(coords$y1 - coords$y0, "npc"),
-                               gp = gpar(
-                                 fill = coords$col,
-                                 col = self$aesthetics$border,
-                                 lwd = self$aesthetics$lwd
-                               ),
-                               just = c("center", "center")
-                             )
+
+                             if (self$style %in% c("full", "diagonal")) {
+                               # Use grid.rect() for full and diagonal styles
+                               grid.rect(
+                                 x = unit((coords$x0 + coords$x1) / 2, "npc"),
+                                 y = unit((coords$y0 + coords$y1) / 2, "npc"),
+                                 width  = unit(coords$x1 - coords$x0, "npc"),
+                                 height = unit(coords$y1 - coords$y0, "npc"),
+                                 gp = gpar(
+                                   fill = coords$col,
+                                   col = self$aesthetics$border,
+                                   lwd = self$aesthetics$lwd
+                                 ),
+                                 just = c("center", "center")
+                               )
+                             } else if (self$style %in% c("triangle", "rectangle")) {
+                               # For rotated styles (triangle, rectangle), coordinates in coordCanvas
+                               # are already in rotated space (after linear transformation in prep()).
+                               # We render them as diamonds using grid.polygon() with 4 corners.
+                               # The corners form a diamond shape in the rotated coordinate space.
+                               for (i in seq_len(nrow(coords))) {
+                                 # Compute 4 corners of the diamond in canvas space
+                                 # The rectangle (x0, y0) to (x1, y1) in rotated space
+                                 # becomes a diamond with 4 corners
+                                 x_center <- (coords$x0[i] + coords$x1[i]) / 2
+                                 y_center <- (coords$y0[i] + coords$y1[i]) / 2
+                                 x_half <- (coords$x1[i] - coords$x0[i]) / 2
+                                 y_half <- (coords$y1[i] - coords$y0[i]) / 2
+
+                                 # Diamond corners (left, bottom, right, top)
+                                 diamond_x <- c(x_center - x_half, x_center, x_center + x_half, x_center)
+                                 diamond_y <- c(y_center, y_center - y_half, y_center, y_center + y_half)
+
+                                 grid.polygon(
+                                   x = unit(diamond_x, "npc"),
+                                   y = unit(diamond_y, "npc"),
+                                   gp = gpar(
+                                     fill = coords$col[i],
+                                     col = self$aesthetics$border,
+                                     lwd = self$aesthetics$lwd
+                                   )
+                                 )
+                               }
+                             }
                            }
                          },
 
@@ -259,3 +433,88 @@ SeqTile <- R6::R6Class("SeqTile",
                          }
                        )
 )
+
+# Helper functions for SeqTile style support
+
+#' @keywords internal
+.validate_style_params <- function(style, gr_y, maxDist, yCoordType) {
+  valid_styles <- c("full", "diagonal", "triangle", "rectangle")
+  if (!style %in% valid_styles) {
+    stop("style must be one of: ", paste(valid_styles, collapse = ", "))
+  }
+
+  if (style != "full" && is.null(gr_y)) {
+    warning("style='", style, "' applies only with 2D genomic y-axis (y=GRanges). Reverting to 'full'.")
+    return("full")
+  }
+
+  if (!is.null(maxDist)) {
+    if (!is.numeric(maxDist) || maxDist <= 0) {
+      stop("maxDist must be a positive number")
+    }
+  }
+
+  if (!yCoordType %in% c("genomic", "distance")) {
+    stop("yCoordType must be 'genomic' or 'distance'")
+  }
+
+  style
+}
+
+#' @keywords internal
+.filter_diagonal_tiles <- function(gr_x, gr_y, qh, sh, style) {
+  if (style == "full") {
+    return(rep(TRUE, length(qh)))
+  }
+
+  if (style == "diagonal") {
+    # Keep upper diagonal: y >= x (in genomic coordinates)
+    y_start <- start(gr_y)[qh]
+    x_start <- start(gr_x)[qh]
+    return(y_start >= x_start)
+  }
+
+  if (style %in% c("triangle", "rectangle")) {
+    # Keep upper-right triangle region
+    y_end <- end(gr_y)[qh]
+    x_start <- start(gr_x)[qh]
+    y_start <- start(gr_y)[qh]
+    x_end <- end(gr_x)[qh]
+    return(y_end >= x_start & y_start <= x_end)
+  }
+
+  rep(TRUE, length(qh))
+}
+
+#' @keywords internal
+.transform_to_rotated_coords <- function(x0, x1, y0, y1) {
+  # Linear coordinate transformation for 45° rotated Hi-C style heatmaps
+  # Based on the approach from hic_rotated_heatmap.R
+  #
+  # Transformation:
+  #   x_rot = (x + y) / 2  (genomic position - bin average)
+  #   y_rot = (y - x) / 2  (genomic distance - half bin difference)
+  #
+  # For a rectangular tile with corners (x0,y0), (x1,y0), (x1,y1), (x0,y1),
+  # the transformed corners form a diamond shape in rotated space.
+  # Corner transformation:
+  #   (x0, y0) → ((x0+y0)/2, (y0-x0)/2)  - left
+  #   (x1, y0) → ((x1+y0)/2, (y0-x1)/2)  - bottom
+  #   (x1, y1) → ((x1+y1)/2, (y1-x1)/2)  - right
+  #   (x0, y1) → ((x0+y1)/2, (y1-x0)/2)  - top
+
+  list(
+    x = c(
+      (x0 + y0) / 2,  # left
+      (x1 + y0) / 2,  # bottom
+      (x1 + y1) / 2,  # right
+      (x0 + y1) / 2   # top
+    ),
+    y = c(
+      (y0 - x0) / 2,  # left
+      (y0 - x1) / 2,  # bottom
+      (y1 - x1) / 2,  # right
+      (y1 - x0) / 2   # top
+    )
+  )
+}
