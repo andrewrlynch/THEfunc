@@ -178,13 +178,14 @@ SeqTile <- R6::R6Class("SeqTile",
                            qh <- S4Vectors::queryHits(ov)
                            sh <- S4Vectors::subjectHits(ov)
 
-                           # Apply diagonal filtering for 2D mode
+                           # Apply diagonal filtering for 2D mode (before extracting data)
                            if (!is.null(self$gr_y) && self$style != "full") {
                              diag_mask <- .filter_diagonal_tiles(self$gr, self$gr_y, qh, sh, self$style)
                              qh <- qh[diag_mask]
                              sh <- sh[diag_mask]
                            }
 
+                           # Extract data AFTER filtering (so indices match)
                            x0     <- start(self$gr)[qh]
                            x1     <- end(self$gr)[qh]
                            colors <- as.character(mcols(self$gr)$color)[qh]
