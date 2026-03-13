@@ -320,9 +320,21 @@ SeqTile <- R6::R6Class("SeqTile",
                                  }
                                  self$coordCanvas[[w]] <- do.call(rbind, Filter(Negate(is.null), all_frames))
                                } else {
-                                 # Single y-window
-                                 v0 <- (y0_m - panel$yscale[1]) / diff(panel$yscale)
-                                 v1 <- (y1_m - panel$yscale[1]) / diff(panel$yscale)
+                                 # Single y-window.
+                                 # Use panel$yscale when it covers the data (e.g. explicit y_windows=).
+                                 # Fall back to the actual data range when panel$yscale is the
+                                 # default c(0,1) fallback (i.e. no y_windows was provided):
+                                 # genomic / distance values are always >> 1, so they would all
+                                 # clamp to 1 and produce invisible zero-height tiles.
+                                 data_range <- range(c(y0_m, y1_m))
+                                 yscale_eff <- if (data_range[2] <= panel$yscale[2] &&
+                                                   data_range[1] >= panel$yscale[1]) {
+                                   panel$yscale
+                                 } else {
+                                   data_range
+                                 }
+                                 v0 <- (y0_m - yscale_eff[1]) / diff(yscale_eff)
+                                 v1 <- (y1_m - yscale_eff[1]) / diff(yscale_eff)
                                  v0 <- pmax(pmin(v0, 1), 0)
                                  v1 <- pmax(pmin(v1, 1), 0)
 
