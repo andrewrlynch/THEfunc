@@ -262,10 +262,20 @@ SeqTile <- R6::R6Class("SeqTile",
                                # Transform genomic (x, y) coordinates to rotated space
                                # x_rot = (x + y) / 2  (represents genomic position)
                                # y_rot = (y - x) / 2  (represents genomic distance)
+                               #
+                               # The four corners of a rectangular tile (x0,y0)-(x1,y1) become
+                               # a diamond with corners:
+                               #   left:   ((x0+y0)/2, (y0-x0)/2)
+                               #   bottom: ((x1+y0)/2, (y0-x1)/2)
+                               #   right:  ((x1+y1)/2, (y1-x1)/2)
+                               #   top:    ((x0+y1)/2, (y1-x0)/2)
+                               # The bounding-box x range  = [left.x,  right.x]  = [(x0+y0)/2, (x1+y1)/2]
+                               # The bounding-box y range  = [bottom.y, top.y]   = [(y0-x1)/2, (y1-x0)/2]
+                               # (uses CROSS terms for y so that square tiles have non-zero height)
                                x0_rot <- (x0_work + y0_work) / 2
                                x1_rot <- (x1_work + y1_work) / 2
-                               y0_rot <- (y0_work - x0_work) / 2
-                               y1_rot <- (y1_work - x1_work) / 2
+                               y0_rot <- (y0_work - x1_work) / 2  # bottom corner y
+                               y1_rot <- (y1_work - x0_work) / 2  # top corner y
 
                                x0_work <- x0_rot
                                x1_work <- x1_rot
