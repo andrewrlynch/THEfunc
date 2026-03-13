@@ -145,7 +145,7 @@ cat("  Window: chr5:", start(window)/1e6, "-", end(window)/1e6, " Mb\n\n")
 
 cat("4. Creating plots for all 4 styles...\n\n")
 
-# Style 1: Full heatmap
+# Style 1: Full heatmapr
 cat("   Style 1: FULL (Traditional rectangular heatmap)\n")
 cat("   - Shows complete symmetric matrix\n")
 cat("   - Useful for detailed analysis\n")

@@ -382,18 +382,21 @@ SeqTile <- R6::R6Class("SeqTile",
 
                              if (self$style %in% c("full", "diagonal")) {
                                # Use grid.rect() for full and diagonal styles
-                               grid.rect(
-                                 x = unit((coords$x0 + coords$x1) / 2, "npc"),
-                                 y = unit((coords$y0 + coords$y1) / 2, "npc"),
-                                 width  = unit(coords$x1 - coords$x0, "npc"),
-                                 height = unit(coords$y1 - coords$y0, "npc"),
-                                 gp = gpar(
-                                   fill = coords$col,
-                                   col = self$aesthetics$border,
-                                   lwd = self$aesthetics$lwd
-                                 ),
-                                 just = c("center", "center")
-                               )
+                               # Loop through each tile to properly handle individual colors
+                               for (i in seq_len(nrow(coords))) {
+                                 grid.rect(
+                                   x = unit((coords$x0[i] + coords$x1[i]) / 2, "npc"),
+                                   y = unit((coords$y0[i] + coords$y1[i]) / 2, "npc"),
+                                   width  = unit(coords$x1[i] - coords$x0[i], "npc"),
+                                   height = unit(coords$y1[i] - coords$y0[i], "npc"),
+                                   gp = gpar(
+                                     fill = coords$col[i],
+                                     col = self$aesthetics$border,
+                                     lwd = self$aesthetics$lwd
+                                   ),
+                                   just = c("center", "center")
+                                 )
+                               }
                              } else if (self$style %in% c("triangle", "rectangle")) {
                                # For rotated styles (triangle, rectangle), coordinates in coordCanvas
                                # are already in rotated space (after linear transformation in prep()).
