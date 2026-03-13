@@ -22,18 +22,30 @@ cat("─────────────────────────
 set.seed(42)
 n <- 6  # 6x6 matrix of contacts
 
-# Create genomic ranges for x-axis
+# Create all contact pairs for 6x6 matrix
+contact_df <- expand.grid(x_idx = 1:n, y_idx = 1:n)
+bin_starts <- seq(1000, 6000, by = 1000)
+bin_size <- 500
+
+# Create strength values (decay with distance)
+strength <- exp(-abs(contact_df$x_idx - contact_df$y_idx) / 2) * runif(nrow(contact_df), 0.5, 1.5)
+
+# Create color palette and assign colors based on strength
+color_palette <- colorRampPalette(c("#E8F4FF", "#4385BE", "#205EA6", "#D5300B"))(256)
+colors <- color_palette[pmax(1, round(strength / max(strength) * 255) + 1)]
+
+# Create genomic ranges for x-axis (each contact pair references a bin)
 x_gr <- GRanges(
   seqnames = "chr1",
-  ranges = IRanges(start = seq(1000, 6000, by = 1000), width = 500),
-  color = colorRampPalette(c("blue", "red"))(n*n)[1:n]
+  ranges = IRanges(start = bin_starts[contact_df$x_idx], width = bin_size),
+  color = colors
 )
 
-# Create genomic ranges for y-axis (same as x for symmetric matrix)
+# Create genomic ranges for y-axis (each contact pair references a bin)
 y_gr <- GRanges(
   seqnames = "chr1",
-  ranges = IRanges(start = seq(1000, 6000, by = 1000), width = 500),
-  color = x_gr$color
+  ranges = IRanges(start = bin_starts[contact_df$y_idx], width = bin_size),
+  color = colors
 )
 
 # Create viewing window
