@@ -206,6 +206,7 @@ mcols(x_grid_all)$color <- cols_grid
 tile_grid <- SeqTile(
   x = x_grid_all,
   y = y_grid_all,
+  style = "rectangle",
   aesthetics = list(border = NA)
 )
 
