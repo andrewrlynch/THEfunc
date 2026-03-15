@@ -31,7 +31,7 @@ set.seed(123)
 # Bin size: 100 kb
 region_start <- 40e6
 region_end <- 50e6
-bin_size <- 100e3
+bin_size <- 100000
 n_bins <- (region_end - region_start) / bin_size
 
 # Create bin boundaries
@@ -46,7 +46,7 @@ cat("  Number of bins:", n_bins, "\n\n")
 # - Diagonal contacts are strong (same bin is most frequent)
 # - Off-diagonal strength decays with distance
 # - Add some noise
-generate_hic_matrix <- function(n_bins, decay_rate = 0.3) {
+generate_hic_matrix <- function(n_bins, decay_rate = 0.2) {
   contacts <- list()
 
   for (i in 1:n_bins) {
@@ -95,9 +95,7 @@ cat("Generated", nrow(hic_matrix), "contact pairs\n\n")
 cat("2. Mapping contacts to colors...\n")
 
 # Create color palette (blue=weak, red=strong)
-color_palette <- colorRampPalette(
-  c("#FFFFFF", "#E8F4FF", "#4385BE", "#205EA6", "#D5300B")
-)(256)
+color_palette <- colorRampPalette(RColorBrewer::brewer.pal(5,"RdPu"))(256)
 
 # Map strength values to colors
 strength_scaled <- (hic_matrix$strength - min(hic_matrix$strength)) /
@@ -145,7 +143,7 @@ cat("  Window: chr5:", start(window)/1e6, "-", end(window)/1e6, " Mb\n\n")
 
 cat("4. Creating plots for all 4 styles...\n\n")
 
-# Style 1: Full heatmapr
+# Style 1: Full heatmap
 cat("   Style 1: FULL (Traditional rectangular heatmap)\n")
 cat("   - Shows complete symmetric matrix\n")
 cat("   - Useful for detailed analysis\n")
@@ -163,7 +161,6 @@ plt_full <- SeqPlot(windows = window) %|%
   tile_full
 
 cat("   Rendering full style plot...\n")
-grid::grid.newpage()
 plt_full$layoutGrid()
 plt_full$drawGrid()
 plt_full$drawAxes()
@@ -187,7 +184,6 @@ plt_diag <- SeqPlot(windows = window) %|%
   tile_diag
 
 cat("   Rendering diagonal style plot...\n")
-grid::grid.newpage()
 plt_diag$layoutGrid()
 plt_diag$drawGrid()
 plt_diag$drawAxes()
@@ -205,19 +201,16 @@ tile_triangle <- SeqTile(
   y = y_gr,
   style = "triangle",
   yCoordType = "distance",
-  aesthetics = list(border = NA, lwd = 0.05)
+  yDistMax = 1000000,
+  aesthetics = list(border = NA, lwd = 0.1)
 )
 
-plt_triangle <- SeqPlot(windows = window) %|%
-  SeqTrack(aesthetics = list(windowBorder = NA, windowBackground = NA)) %+%
+plt_triangle <- SeqPlot(windows = window, aesthetics = list(margins = list(top = 0.05, bottom = 0.1, left = 0.1, right = 0.05))) %|%
+  SeqTrack(aesthetics = list(windowBorder = NA, windowBackground = NA), windows = createGenomeWindows("chr5:44000000-48000000")) %+%
   tile_triangle
 
 cat("   Rendering triangle style plot...\n")
-grid::grid.newpage()
-plt_triangle$layoutGrid()
-plt_triangle$drawGrid()
-plt_triangle$drawAxes()
-plt_triangle$drawElements()
+plt_triangle$plot()
 
 # Style 4: Rectangle (45° rotated with expansion)
 cat("\n   Style 4: RECTANGLE (45° rotated with window expansion)\n")
@@ -230,18 +223,17 @@ tile_rect <- SeqTile(
   x = x_gr,
   y = y_gr,
   style = "rectangle",
-  maxDist = maxDist,
   yCoordType = "distance",
+  yDistMax = 1000000,
   aesthetics = list(border = NA, lwd = 0.05)
 )
 
-plt_rect <- SeqPlot(windows = window) %|%
-  SeqTrack(aesthetics = list(windowBorder = NA, windowBackground = NA)) %+%
+plt_rect <- SeqPlot(aesthetics = list(margins = list(top = 0.1, bottom = 0.2, left = 0.1, right = 0.1))) %|%
+  SeqTrack(aesthetics = list(windowBorder = NA, windowBackground = NA), windows = createGenomeWindows(c("chr5:42000000-45000000"))) %+%
   tile_rect
 
 cat("   Window expansion: ±", maxDist/1e6, " Mb\n")
 cat("   Rendering rectangle style plot...\n")
-grid::grid.newpage()
 plt_rect$layoutGrid()
 plt_rect$drawGrid()
 plt_rect$drawAxes()

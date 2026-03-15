@@ -90,7 +90,7 @@ mcols(y_gr)$color <- colors
 
 # Define viewing window
 window <- GRanges("chr21", IRanges(28950000, 29800000))
-mcols(window)$scale <- 1e-3  # Display in kb
+mcols(window)$scale <- 1e-6  # Display in mb
 
 cat("Created symmetric contact matrix for chr21:28950kb-29800kb\n")
 cat("  X-axis: genomic positions\n")
@@ -231,25 +231,6 @@ cat("    x-coords: ", paste(round(rot$x, 3), collapse = ", "), "\n")
 cat("    y-coords: ", paste(round(rot$y, 3), collapse = ", "), "\n\n")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Summary
-# ══════════════════════════════════════════════════════════════════════════════
-
-cat("=== Summary ===\n")
-cat("✓ All 4 style modes created successfully\n")
-cat("✓ Parameters validated and stored correctly\n")
-cat("✓ Helper functions working as expected\n")
-cat("\nUsage notes:\n")
-cat("  - style parameter only applies in 2D mode (when y= is GRanges)\n")
-cat("  - maxDist auto-computed from y-axis window widths for rectangle style\n")
-cat("  - yCoordType stored but used for display interpretation (future feature)\n")
-cat("  - rotated styles (triangle, rectangle) use linear coordinate transformation + grid.polygon()\n")
-cat("  - diagonal style filters upper triangle and uses traditional grid.rect()\n")
-cat("  - 'full' style uses traditional grid.rect() (unchanged from before)\n")
-cat("\nNotes for visualization:\n")
-cat("  - Use SeqPlot + SeqTrack to render these tiles with proper axes\n")
-cat("  - Contact strength shown by color gradient (blue=weak, red=strong)\n")
-cat("  - Rotated styles more space-efficient for symmetric matrices\n")
-# ══════════════════════════════════════════════════════════════════════════════
 # Visualization Tests: Render all 4 styles with SeqPlot + SeqTrack
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -271,6 +252,13 @@ render_style_plot <- function(tile, style_name, window) {
 
   invisible(plt)
 }
+
+plt <- SeqPlot(windows = window) %|%
+  SeqTrack(aesthetics = list(windowBorder = NA, windowBackground = NA)) %+%
+  tile_full
+
+
+plt$plot()
 
 # Render each style
 cat("Style 1: full (default rectangular heatmap)\n")

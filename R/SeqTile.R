@@ -32,6 +32,10 @@ SeqTile <- R6::R6Class("SeqTile",
                          #' @field coordCanvas List of per-panel tile coordinates (x0, x1, y0, y1, color).
                          coordCanvas = NULL,
 
+                         #' @field panelBounds List of per-panel inner-panel NPC bounds used for
+                         #'   viewport clipping in rotated styles (triangle, rectangle).
+                         panelBounds = NULL,
+
                          #' @field aesthetics Plotting aesthetics (border, lwd).
                          aesthetics = NULL,
 
@@ -49,6 +53,10 @@ SeqTile <- R6::R6Class("SeqTile",
 
                          #' @field maxDist Maximum genomic distance for clipping.
                          maxDist = NULL,
+
+                         #' @field yDistMax Maximum distance for the y-axis when yCoordType = "distance".
+                         #'   If NULL, falls back to maxDist. Only used with rotated styles.
+                         yDistMax = NULL,
 
                          #' @description
                          #' Create a new `SeqTile` object.
@@ -73,11 +81,13 @@ SeqTile <- R6::R6Class("SeqTile",
                          #'   "distance". Only used with rotated styles.
                          #' @param maxDist Maximum genomic distance for clipping. If NULL,
                          #'   defaults to max(width(y)) for "rectangle" style.
+                         #' @param yDistMax Maximum distance (bp) shown on the y-axis when
+                         #'   `yCoordType = "distance"`. If NULL, falls back to `maxDist`.
                          initialize = function(gr = NULL, x = NULL, y = NULL,
                                                groupCol = NULL, aesthetics = list(),
                                                aes = NULL, scale = NULL,
                                                style = "full", yCoordType = "genomic",
-                                               maxDist = NULL) {
+                                               maxDist = NULL, yDistMax = NULL) {
                            # resolve primary ranges (x or legacy gr)
                            if (!is.null(x)) {
                              stopifnot(inherits(x, "GRanges"))
@@ -148,6 +158,7 @@ SeqTile <- R6::R6Class("SeqTile",
                            } else if (!is.null(maxDist)) {
                              self$maxDist <- maxDist
                            }
+                           self$yDistMax <- yDistMax
                          },
 
                          #' @description
@@ -156,6 +167,7 @@ SeqTile <- R6::R6Class("SeqTile",
                          #' @param track_windows A `GRanges` of genomic windows for the track.
                          prep = function(layout_track, track_windows) {
                            self$coordCanvas <- vector("list", length(track_windows))
+                           self$panelBounds <- vector("list", length(track_windows))
 
                            # For rectangle style, expand x-ranges before overlap detection
                            search_gr <- self$gr
@@ -209,39 +221,13 @@ SeqTile <- R6::R6Class("SeqTile",
                              y_idx <- self$y[qh]
                            }
 
-                           # Pre-rotation clipping for rectangle style:
-                           # Keep only tiles where x-range overlaps with ORIGINAL unexpanded windows
-                           if (self$style == "rectangle" && !is.null(self$gr_y) && !is.null(self$maxDist)) {
-                             # x0_orig, x1_orig are from unexpanded gr, not from expanded search_gr
-                             # Check which tiles have x-range overlapping with track_windows
-                             rect_mask <- rep(TRUE, length(qh))
-                             for (i in seq_along(unique(sh))) {
-                               w_idx <- unique(sh)[i]
-                               window_range <- track_windows[w_idx]
-                               w_mask <- sh == w_idx
-                               # Keep tiles that overlap with actual window bounds
-                               rect_mask[w_mask] <- end(self$gr)[qh[w_mask]] > start(window_range) &
-                                                    start(self$gr)[qh[w_mask]] < end(window_range)
-                             }
-                             qh <- qh[rect_mask]
-                             sh <- sh[rect_mask]
-                             x0 <- x0[rect_mask]
-                             x1 <- x1[rect_mask]
-                             colors <- colors[rect_mask]
-                             x0_orig <- x0_orig[rect_mask]
-                             x1_orig <- x1_orig[rect_mask]
-                             if (!is.null(y0_orig)) {
-                               y0_orig <- y0_orig[rect_mask]
-                               y1_orig <- y1_orig[rect_mask]
-                             }
-                             if (!is.null(y0_raw)) {
-                               y0_raw <- y0_raw[rect_mask]
-                               y1_raw <- y1_raw[rect_mask]
-                             }
-                             if (!is.null(y_idx)) {
-                               y_idx <- y_idx[rect_mask]
-                             }
-                           }
+                           # NOTE: For "rectangle" style, do NOT apply any pre-rotation clipping here.
+                           # The window expansion above already fetched flanking contacts (x outside
+                           # the display window but whose rotated position x_rot = (x+y)/2 lands
+                           # inside the window). Clipping them back to the original x-range would
+                           # remove exactly the contacts that fill the top corners of the rectangle.
+                           # The u0/u1 clamping in the coordinate normalisation below handles the
+                           # visual boundary cleanly.
 
                            for (w in unique(sh)) {
                              mask <- sh == w
@@ -289,8 +275,13 @@ SeqTile <- R6::R6Class("SeqTile",
                              # x: canvas mapping (works with original or transformed coordinates)
                              u0 <- (x0_work - panel$xscale[1]) / diff(panel$xscale)
                              u1 <- (x1_work - panel$xscale[1]) / diff(panel$xscale)
-                             u0 <- pmax(pmin(u0, 1), 0)
-                             u1 <- pmax(pmin(u1, 1), 0)
+                             u0_raw <- u0
+                             u1_raw <- u1
+                             # Rotated styles need unclamped u for clip detection; clamp others now
+                             if (!self$style %in% c("triangle", "rectangle")) {
+                               u0 <- pmax(pmin(u0, 1), 0)
+                               u1 <- pmax(pmin(u1, 1), 0)
+                             }
 
                              if (!is.null(y0_raw)) {
                                # Genomic y-axis
@@ -330,39 +321,88 @@ SeqTile <- R6::R6Class("SeqTile",
                                  }
                                  self$coordCanvas[[w]] <- do.call(rbind, Filter(Negate(is.null), all_frames))
                                } else {
-                                 # Single y-window.
-                                 # Use panel$yscale when it covers the data (e.g. explicit y_windows=).
-                                 # Fall back to the actual data range when panel$yscale is the
-                                 # default c(0,1) fallback (i.e. no y_windows was provided):
-                                 # genomic / distance values are always >> 1, so they would all
-                                 # clamp to 1 and produce invisible zero-height tiles.
-                                 data_range <- range(c(y0_m, y1_m))
-                                 yscale_eff <- if (data_range[2] <= panel$yscale[2] &&
-                                                   data_range[1] >= panel$yscale[1]) {
-                                   panel$yscale
-                                 } else {
-                                   data_range
-                                 }
-                                 v0 <- (y0_m - yscale_eff[1]) / diff(yscale_eff)
-                                 v1 <- (y1_m - yscale_eff[1]) / diff(yscale_eff)
-                                 v0 <- pmax(pmin(v0, 1), 0)
-                                 v1 <- pmax(pmin(v1, 1), 0)
+                                 # Single y-window — determine effective yscale and v0/v1.
 
-                                 # canvas coordinates
+                                 if (self$style %in% c("triangle", "rectangle") &&
+                                     self$yCoordType == "distance") {
+                                   # Distance mode: use FULL distance (2 × half-distance y_rot).
+                                   # Aligns with the [0, yDistMax] scale from .infer_scale_y().
+                                   y0_m <- y0_m * 2   # = y0_raw - x1_raw (full distance, bp)
+                                   y1_m <- y1_m * 2   # = y1_raw - x0_raw (full distance, bp)
+                                   dist_max <- self$yDistMax %||% self$maxDist %||%
+                                               max(y1_m, na.rm = TRUE)
+                                   yscale_eff <- c(0, dist_max)
+                                 } else {
+                                   # Genomic mode (full / diagonal / triangle / rectangle):
+                                   # use panel$yscale when it covers the data (set by y_windows=
+                                   # or .infer_scale_y()); fall back to data range when
+                                   # panel$yscale is the default c(0,1).
+                                   data_range <- range(c(y0_m, y1_m))
+                                   yscale_eff <- if (data_range[2] <= panel$yscale[2] &&
+                                                     data_range[1] >= panel$yscale[1]) {
+                                     panel$yscale
+                                   } else {
+                                     data_range
+                                   }
+                                 }
+
+                                 v0     <- (y0_m - yscale_eff[1]) / diff(yscale_eff)
+                                 v1     <- (y1_m - yscale_eff[1]) / diff(yscale_eff)
+                                 v0_raw <- v0
+                                 v1_raw <- v1
+                                 # Clamp for non-rotated styles only
+                                 if (!self$style %in% c("triangle", "rectangle")) {
+                                   v0 <- pmax(pmin(v0, 1), 0)
+                                   v1 <- pmax(pmin(v1, 1), 0)
+                                 }
+
+                                 # Canvas coordinates — keep unclamped so the bounding box
+                                 # reflects the true diamond shape for correct clip geometry.
                                  x0_c <- panel$inner$x0 + u0 * (panel$inner$x1 - panel$inner$x0)
                                  x1_c <- panel$inner$x0 + u1 * (panel$inner$x1 - panel$inner$x0)
                                  y0_c <- panel$inner$y0 + v0 * (panel$inner$y1 - panel$inner$y0)
                                  y1_c <- panel$inner$y0 + v1 * (panel$inner$y1 - panel$inner$y0)
 
-                                 self$coordCanvas[[w]] <- data.frame(
-                                   x0 = x0_c, x1 = x1_c,
-                                   y0 = y0_c, y1 = y1_c,
-                                   col = colors[mask],
-                                   x0_orig = x0_orig[mask],
-                                   x1_orig = x1_orig[mask],
-                                   y0_orig = y0_orig[mask],
-                                   y1_orig = y1_orig[mask]
-                                 )
+                                 if (self$style %in% c("triangle", "rectangle")) {
+                                   # Clip-type bit flags: 1=left, 2=right, 4=bottom, 8=top
+                                   clip <- bitwOr(
+                                     bitwOr(as.integer(u0_raw < 0) * 1L,
+                                            as.integer(u1_raw > 1) * 2L),
+                                     bitwOr(as.integer(v0_raw < 0) * 4L,
+                                            as.integer(v1_raw > 1) * 8L)
+                                   )
+                                   # Discard tiles fully outside the visible area
+                                   visible <- u1_raw > 0 & u0_raw < 1 &
+                                              v1_raw > 0 & v0_raw < 1
+
+                                   # Store inner-panel NPC bounds for viewport clipping in draw().
+                                   ix0 <- panel$inner$x0; ix1 <- panel$inner$x1
+                                   iy0 <- panel$inner$y0; iy1 <- panel$inner$y1
+                                   self$panelBounds[[w]] <- list(
+                                     x0 = ix0, x1 = ix1,
+                                     y0 = iy0, y1 = iy1
+                                   )
+
+                                   self$coordCanvas[[w]] <- data.frame(
+                                     x0  = x0_c[visible], x1 = x1_c[visible],
+                                     y0  = y0_c[visible], y1 = y1_c[visible],
+                                     col = colors[mask][visible],
+                                     x0_orig = x0_orig[mask][visible],
+                                     x1_orig = x1_orig[mask][visible],
+                                     y0_orig = y0_orig[mask][visible],
+                                     y1_orig = y1_orig[mask][visible]
+                                   )
+                                 } else {
+                                   self$coordCanvas[[w]] <- data.frame(
+                                     x0 = x0_c, x1 = x1_c,
+                                     y0 = y0_c, y1 = y1_c,
+                                     col = colors[mask],
+                                     x0_orig = x0_orig[mask],
+                                     x1_orig = x1_orig[mask],
+                                     y0_orig = y0_orig[mask],
+                                     y1_orig = y1_orig[mask]
+                                   )
+                                 }
                                }
                              } else {
                                # y: integer positions scaled through yscale
@@ -419,42 +459,289 @@ SeqTile <- R6::R6Class("SeqTile",
                                  just = c("center", "center")
                                )
                              } else if (self$style %in% c("triangle", "rectangle")) {
-                               # For rotated styles (triangle, rectangle), coordinates in coordCanvas
-                               # are already in rotated space (after linear transformation in prep()).
-                               # We render them as diamonds using grid.polygon() with 4 corners.
-                               # The corners form a diamond shape in the rotated coordinate space.
-                               for (i in seq_len(nrow(coords))) {
-                                 # Compute 4 corners of the diamond in canvas space
-                                 # The rectangle (x0, y0) to (x1, y1) in rotated space
-                                 # becomes a diamond with 4 corners
-                                 x_center <- (coords$x0[i] + coords$x1[i]) / 2
-                                 y_center <- (coords$y0[i] + coords$y1[i]) / 2
-                                 x_half <- (coords$x1[i] - coords$x0[i]) / 2
-                                 y_half <- (coords$y1[i] - coords$y0[i]) / 2
+                               x0  <- coords$x0
+                               x1  <- coords$x1
+                               y0  <- coords$y0
+                               y1  <- coords$y1
+                               col <- coords$col
+                               brd <- self$aesthetics$border
+                               lwd <- self$aesthetics$lwd
 
-                                 # Diamond corners (left, bottom, right, top)
-                                 diamond_x <- c(x_center - x_half, x_center, x_center + x_half, x_center)
-                                 diamond_y <- c(y_center, y_center - y_half, y_center, y_center + y_half)
+                               pb  <- if (!is.null(self$panelBounds)) self$panelBounds[[w]] else NULL
+                               has_bounds <- !is.null(pb) && (pb$x1 > pb$x0) && (pb$y1 > pb$y0)
 
-                                 grid.polygon(
-                                   x = unit(diamond_x, "npc"),
-                                   y = unit(diamond_y, "npc"),
-                                   gp = gpar(
-                                     fill = coords$col[i],
-                                     col = self$aesthetics$border,
-                                     lwd = self$aesthetics$lwd
+                               xc <- (x0 + x1) / 2  # unclamped diamond centres
+                               yc <- (y0 + y1) / 2
+
+                               if (has_bounds && self$style == "rectangle") {
+                                 # Rectangle: clip against axis-aligned rectangular bounds
+                                 for (i in seq_along(x0)) {
+                                   diamond_x <- c(x0[i], xc[i], x1[i], xc[i], x0[i])  # closed polygon
+                                   diamond_y <- c(yc[i], y0[i], yc[i], y1[i], yc[i])
+
+                                   clipped <- self$.clip_polygon_rect(
+                                     diamond_x, diamond_y,
+                                     xmin = pb$x0, xmax = pb$x1,
+                                     ymin = pb$y0, ymax = pb$y1
                                    )
+
+                                   if (length(clipped$x) > 0) {
+                                     grid.polygon(
+                                       x  = unit(clipped$x, "npc"),
+                                       y  = unit(clipped$y, "npc"),
+                                       gp = gpar(fill = col[i], col = brd, lwd = lwd)
+                                     )
+                                   }
+                                 }
+                               } else if (has_bounds && self$style == "triangle") {
+                                 # Triangle: clip against diagonal bounds (45° rotated square)
+                                 # Convert panel bounds to rotated (u,v) coordinates
+                                 u0 <- (pb$x0 + pb$y0) / 2  # lower-left corner rotated u-coordinate
+                                 u1 <- (pb$x1 + pb$y1) / 2  # upper-right corner rotated u-coordinate
+                                 v0 <- (pb$x0 - pb$y1) / 2  # lower-right corner rotated v-coordinate
+                                 v1 <- (pb$x1 - pb$y0) / 2  # upper-left corner rotated v-coordinate
+
+                                 for (i in seq_along(x0)) {
+                                   diamond_x <- c(x0[i], xc[i], x1[i], xc[i], x0[i])  # closed polygon
+                                   diamond_y <- c(yc[i], y0[i], yc[i], y1[i], yc[i])
+
+                                   clipped <- self$.clip_polygon_diag(
+                                     diamond_x, diamond_y,
+                                     u0 = u0, u1 = u1,
+                                     v0 = v0, v1 = v1
+                                   )
+
+                                   if (length(clipped$x) > 0) {
+                                     grid.polygon(
+                                       x  = unit(clipped$x, "npc"),
+                                       y  = unit(clipped$y, "npc"),
+                                       gp = gpar(fill = col[i], col = brd, lwd = lwd)
+                                     )
+                                   }
+                                 }
+                               } else {
+                                 # No clipping needed: draw all diamonds as-is
+                                 grid.polygon(
+                                   x          = unit(c(rbind(x0, xc, x1, xc)), "npc"),
+                                   y          = unit(c(rbind(yc, y0, yc, y1)), "npc"),
+                                   id.lengths = rep(4L, length(x0)),
+                                   gp         = gpar(fill = col, col = brd, lwd = lwd)
                                  )
                                }
                              }
                            }
                          },
 
-                         .infer_scale_y = function() {
-                           if (!is.null(self$groups))
+                         # Clipping helpers for polygon-based viewport clipping
+
+                        #' @description
+                        #' Clip a convex polygon against a rectangular clipping region using
+                        #' Sutherland-Hodgman algorithm. Returns a list of (x, y) vertex vectors.
+                        #' Used for "rectangle" style to create straight-edged clipping.
+                        #'
+                        #' @param x,y  Numeric vectors of polygon vertices (must be closed)
+                        #' @param xmin,xmax,ymin,ymax  Rectangular clip region bounds
+                        #'
+                        #' @return List(x, y) with clipped polygon vertices, possibly fewer
+                        .clip_polygon_rect = function(x, y, xmin, xmax, ymin, ymax) {
+                          # Sutherland-Hodgman: clip polygon against 4 rectangular edges in sequence
+                          clip_left   = function(x, y) self$.clip_polygon_edge(x, y, "left",   xmin)
+                          clip_right  = function(x, y) self$.clip_polygon_edge(x, y, "right",  xmax)
+                          clip_bottom = function(x, y) self$.clip_polygon_edge(x, y, "bottom", ymin)
+                          clip_top    = function(x, y) self$.clip_polygon_edge(x, y, "top",    ymax)
+
+                          result <- list(x = x, y = y)
+                          for (clip_fn in list(clip_left, clip_right, clip_bottom, clip_top)) {
+                            result <- clip_fn(result$x, result$y)
+                            if (length(result$x) == 0) break
+                          }
+                          result
+                        },
+
+                        #' @description
+                        #' Clip polygon against a single axis-aligned edge.
+                        .clip_polygon_edge = function(x, y, edge, val) {
+                          if (length(x) == 0) return(list(x = numeric(0), y = numeric(0)))
+
+                          if (x[1] != x[length(x)] || y[1] != y[length(y)]) {
+                            x <- c(x, x[1])
+                            y <- c(y, y[1])
+                          }
+
+                          n <- length(x) - 1
+                          out_x <- numeric(0)
+                          out_y <- numeric(0)
+
+                          if (edge == "left") {
+                            inside <- function(xx) xx >= val
+                            intersect <- function(x1, y1, x2, y2) {
+                              if (x1 == x2) return(list(x = x1, y = y1))
+                              t <- (val - x1) / (x2 - x1)
+                              list(x = val, y = y1 + t * (y2 - y1))
+                            }
+                          } else if (edge == "right") {
+                            inside <- function(xx) xx <= val
+                            intersect <- function(x1, y1, x2, y2) {
+                              if (x1 == x2) return(list(x = x1, y = y1))
+                              t <- (val - x1) / (x2 - x1)
+                              list(x = val, y = y1 + t * (y2 - y1))
+                            }
+                          } else if (edge == "bottom") {
+                            inside <- function(yy) yy >= val
+                            intersect <- function(x1, y1, x2, y2) {
+                              if (y1 == y2) return(list(x = x1, y = y1))
+                              t <- (val - y1) / (y2 - y1)
+                              list(x = x1 + t * (x2 - x1), y = val)
+                            }
+                          } else if (edge == "top") {
+                            inside <- function(yy) yy <= val
+                            intersect <- function(x1, y1, x2, y2) {
+                              if (y1 == y2) return(list(x = x1, y = y1))
+                              t <- (val - y1) / (y2 - y1)
+                              list(x = x1 + t * (x2 - x1), y = val)
+                            }
+                          }
+
+                          for (i in 1:n) {
+                            x1 <- x[i];  y1 <- y[i]
+                            x2 <- x[i+1]; y2 <- y[i+1]
+                            inside1 <- if (edge %in% c("left", "right")) inside(x1) else inside(y1)
+                            inside2 <- if (edge %in% c("left", "right")) inside(x2) else inside(y2)
+
+                            if (inside2) {
+                              if (!inside1) {
+                                inter <- intersect(x1, y1, x2, y2)
+                                out_x <- c(out_x, inter$x)
+                                out_y <- c(out_y, inter$y)
+                              }
+                              out_x <- c(out_x, x2)
+                              out_y <- c(out_y, y2)
+                            } else if (inside1) {
+                              inter <- intersect(x1, y1, x2, y2)
+                              out_x <- c(out_x, inter$x)
+                              out_y <- c(out_y, inter$y)
+                            }
+                          }
+
+                          list(x = out_x, y = out_y)
+                        },
+
+                        #' @description
+                        #' Clip a convex polygon against diagonal clipping region (rotated 45° square).
+                        #' Used for "triangle" style to create diagonal-edged boundaries.
+                        #'
+                        #' @param x,y  Numeric vectors of polygon vertices (must be closed)
+                        #' @param u0,u1,v0,v1  Bounds in rotated (u,v) coordinate system
+                        #'
+                        #' @return List(x, y) with clipped polygon vertices
+                        .clip_polygon_diag = function(x, y, u0, u1, v0, v1) {
+                          # Clip against 4 diagonal edges using rotated coordinate inequalities
+                          clip_u_min = function(x, y) self$.clip_polygon_diag_edge(x, y, "u_min", u0)
+                          clip_u_max = function(x, y) self$.clip_polygon_diag_edge(x, y, "u_max", u1)
+                          clip_v_min = function(x, y) self$.clip_polygon_diag_edge(x, y, "v_min", v0)
+                          clip_v_max = function(x, y) self$.clip_polygon_diag_edge(x, y, "v_max", v1)
+
+                          result <- list(x = x, y = y)
+                          for (clip_fn in list(clip_u_min, clip_u_max, clip_v_min, clip_v_max)) {
+                            result <- clip_fn(result$x, result$y)
+                            if (length(result$x) == 0) break
+                          }
+                          result
+                        },
+
+                        #' @description
+                        #' Clip polygon against a single diagonal edge in rotated space.
+                        #' @param edge One of: "u_min" (u >= val), "u_max" (u <= val),
+                        #'             "v_min" (v >= val), "v_max" (v <= val)
+                        .clip_polygon_diag_edge = function(x, y, edge, val) {
+                          if (length(x) == 0) return(list(x = numeric(0), y = numeric(0)))
+
+                          if (x[1] != x[length(x)] || y[1] != y[length(y)]) {
+                            x <- c(x, x[1])
+                            y <- c(y, y[1])
+                          }
+
+                          n <- length(x) - 1
+                          out_x <- numeric(0)
+                          out_y <- numeric(0)
+
+                          if (edge == "u_min") {
+                            inside <- function(xx, yy) (xx + yy) / 2 >= val
+                            intersect <- function(x1, y1, x2, y2) {
+                              denom <- x2 - x1 + y2 - y1
+                              if (abs(denom) < 1e-10) return(list(x = x1, y = y1))
+                              t <- (2 * val - x1 - y1) / denom
+                              list(x = x1 + t * (x2 - x1), y = y1 + t * (y2 - y1))
+                            }
+                          } else if (edge == "u_max") {
+                            inside <- function(xx, yy) (xx + yy) / 2 <= val
+                            intersect <- function(x1, y1, x2, y2) {
+                              denom <- x2 - x1 + y2 - y1
+                              if (abs(denom) < 1e-10) return(list(x = x1, y = y1))
+                              t <- (2 * val - x1 - y1) / denom
+                              list(x = x1 + t * (x2 - x1), y = y1 + t * (y2 - y1))
+                            }
+                          } else if (edge == "v_min") {
+                            inside <- function(xx, yy) (xx - yy) / 2 >= val
+                            intersect <- function(x1, y1, x2, y2) {
+                              denom <- x2 - x1 - (y2 - y1)
+                              if (abs(denom) < 1e-10) return(list(x = x1, y = y1))
+                              t <- (2 * val - x1 + y1) / denom
+                              list(x = x1 + t * (x2 - x1), y = y1 + t * (y2 - y1))
+                            }
+                          } else if (edge == "v_max") {
+                            inside <- function(xx, yy) (xx - yy) / 2 <= val
+                            intersect <- function(x1, y1, x2, y2) {
+                              denom <- x2 - x1 - (y2 - y1)
+                              if (abs(denom) < 1e-10) return(list(x = x1, y = y1))
+                              t <- (2 * val - x1 + y1) / denom
+                              list(x = x1 + t * (x2 - x1), y = y1 + t * (y2 - y1))
+                            }
+                          }
+
+                          for (i in 1:n) {
+                            x1 <- x[i];  y1 <- y[i]
+                            x2 <- x[i+1]; y2 <- y[i+1]
+                            inside1 <- inside(x1, y1)
+                            inside2 <- inside(x2, y2)
+
+                            if (inside2) {
+                              if (!inside1) {
+                                inter <- intersect(x1, y1, x2, y2)
+                                out_x <- c(out_x, inter$x)
+                                out_y <- c(out_y, inter$y)
+                              }
+                              out_x <- c(out_x, x2)
+                              out_y <- c(out_y, y2)
+                            } else if (inside1) {
+                              inter <- intersect(x1, y1, x2, y2)
+                              out_x <- c(out_x, inter$x)
+                              out_y <- c(out_y, inter$y)
+                            }
+                          }
+
+                          list(x = out_x, y = out_y)
+                        },
+
+                        .infer_scale_y = function() {
+                           if (!is.null(self$gr_y)) {
+                             if (self$style %in% c("triangle", "rectangle") &&
+                                 self$yCoordType == "distance") {
+                               # Distance axis: continuous scale [0, yDistMax] in bp.
+                               # yDistMax takes priority; fall back to maxDist.
+                               dist_max <- self$yDistMax %||% self$maxDist
+                               if (!is.null(dist_max))
+                                 seq_scale_continuous(limits = c(0, dist_max))
+                               else
+                                 NULL  # data-range fallback handled in prep()
+                             } else {
+                               seq_scale_genomic(self$gr_y)
+                             }
+                           } else if (!is.null(self$groups)) {
                              seq_scale_discrete(levels = self$groups)
-                           else
+                           } else {
                              NULL
+                           }
                          }
                        )
 )
@@ -500,12 +787,12 @@ SeqTile <- R6::R6Class("SeqTile",
   }
 
   if (style %in% c("triangle", "rectangle")) {
-    # Keep upper-right triangle region
-    y_end <- end(gr_y)[qh]
-    x_start <- start(gr_x)[qh]
+    # Keep upper triangle only: y >= x (same as "diagonal").
+    # Lower-triangle tiles produce negative rotated y-coordinates which
+    # cause a symmetric filled rectangle instead of the expected triangular shape.
     y_start <- start(gr_y)[qh]
-    x_end <- end(gr_x)[qh]
-    return(y_end >= x_start & y_start <= x_end)
+    x_start <- start(gr_x)[qh]
+    return(y_start >= x_start)
   }
 
   rep(TRUE, length(qh))

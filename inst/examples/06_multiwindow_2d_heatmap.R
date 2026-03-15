@@ -47,6 +47,7 @@ mcols(x_gr)$color <- cols
 tile_2d <- SeqTile(
   x = x_gr,           # X-axis: genomic positions on chr1
   y = y_gr,           # Y-axis: genomic positions on chr2
+  style = "triangle",
   aesthetics = list(border = NA, lwd = 0.1)
 )
 
