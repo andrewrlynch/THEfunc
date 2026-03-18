@@ -194,6 +194,23 @@ SeqTile <- R6::R6Class("SeqTile",
                            qh <- S4Vectors::queryHits(ov)
                            sh <- S4Vectors::subjectHits(ov)
 
+                           # Rectangle: also search by y-axis overlap to capture upper-left corner tiles.
+                           # Those tiles have x_orig < window_min (absent from x-based findOverlaps when
+                           # Hi-C data was loaded only for the visible x-window) but y_orig inside the
+                           # window. The upper-right corner is already covered because those tiles have
+                           # x_orig inside the window. The straddle filter will discard any tiles that
+                           # fall entirely outside the x_rot range, so no extra data leaks in.
+                           if (self$style == "rectangle" && !is.null(self$gr_y)) {
+                             ov_y <- GenomicRanges::findOverlaps(self$gr_y, track_windows)
+                             if (length(ov_y) > 0) {
+                               qh_all <- c(qh, S4Vectors::queryHits(ov_y))
+                               sh_all <- c(sh, S4Vectors::subjectHits(ov_y))
+                               keep   <- !duplicated(paste(qh_all, sh_all, sep = "_"))
+                               qh     <- qh_all[keep]
+                               sh     <- sh_all[keep]
+                             }
+                           }
+
                            # Apply diagonal filtering for 2D mode (before extracting data)
                            if (!is.null(self$gr_y) && self$style != "full") {
                              diag_mask <- .filter_diagonal_tiles(self$gr, self$gr_y, qh, sh, self$style)
