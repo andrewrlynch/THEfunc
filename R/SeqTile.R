@@ -410,7 +410,12 @@ SeqTile <- R6::R6Class("SeqTile",
                                      x0 = ix0, x1 = ix1,
                                      y0 = iy0, y1 = iy1,
                                      xscale = panel$xscale,
-                                     yscale = yscale_eff
+                                     yscale = yscale_eff,
+                                     # Unexpanded data range in distance coords [0, dist_max].
+                                     # Used in draw() to clip triangles at data boundaries
+                                     # (not physical panel edges) so yExpansion creates gaps.
+                                     data_yscale = if (self$style %in% c("triangle", "rectangle"))
+                                       c(0, dist_max) else NULL
                                    )
 
                                    self$coordCanvas[[w]] <- data.frame(
@@ -526,14 +531,27 @@ SeqTile <- R6::R6Class("SeqTile",
                                } else if (has_bounds && self$style == "triangle") {
                                  # Triangle: tile omission (straddling filter in prep()) handles diagonal
                                  # left/right edges. Horizontal polygon clipping handles top/bottom edges.
+                                 #
+                                 # Clip at DATA boundaries (distance=0, distance=dist_max), NOT at
+                                 # physical panel edges (pb$y0, pb$y1). This ensures yExpansion creates
+                                 # proper gaps: distance=0 sits above pb$y0, dist_max sits below pb$y1.
+                                 span_npc <- pb$y1 - pb$y0
+                                 dist_span <- diff(pb$yscale)
+                                 if (!is.null(pb$data_yscale) && dist_span > 0) {
+                                   y_bottom <- pb$y0 + (pb$data_yscale[1] - pb$yscale[1]) / dist_span * span_npc
+                                   y_top    <- pb$y0 + (pb$data_yscale[2] - pb$yscale[1]) / dist_span * span_npc
+                                 } else {
+                                   y_bottom <- pb$y0  # fallback (no expansion info)
+                                   y_top    <- pb$y1
+                                 }
                                  for (i in seq_along(x0)) {
                                    diamond_x <- c(x0[i], xc[i], x1[i], xc[i])
                                    diamond_y <- c(yc[i], y0[i], yc[i], y1[i])
-                                   # Clip at top (y = pb$y1 = yDistMax in NPC)
-                                   clipped <- self$.clip_polygon_horizontal_edge(diamond_x, diamond_y, pb$y1, keep_above = FALSE)
-                                   # Clip at bottom (y = pb$y0 = 0 in NPC)
+                                   # Clip at top (y = y_top = dist_max in NPC)
+                                   clipped <- self$.clip_polygon_horizontal_edge(diamond_x, diamond_y, y_top, keep_above = FALSE)
+                                   # Clip at bottom (y = y_bottom = distance 0 in NPC)
                                    if (length(clipped$x) > 0)
-                                     clipped <- self$.clip_polygon_horizontal_edge(clipped$x, clipped$y, pb$y0, keep_above = TRUE)
+                                     clipped <- self$.clip_polygon_horizontal_edge(clipped$x, clipped$y, y_bottom, keep_above = TRUE)
                                    if (length(clipped$x) > 0) {
                                      grid.polygon(
                                        x  = unit(clipped$x, "npc"),
