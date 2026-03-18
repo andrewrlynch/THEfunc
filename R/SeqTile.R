@@ -404,16 +404,21 @@ SeqTile <- R6::R6Class("SeqTile",
                                      yscale_eff <- c(0, dist_max)
                                    }
                                  } else {
-                                   # Genomic mode for full/diagonal styles:
-                                   # use panel$yscale when it covers the data (set by y_windows=
-                                   # or .infer_scale_y()); fall back to data range when
-                                   # panel$yscale is the default c(0,1).
-                                   data_range <- range(c(y0_m, y1_m))
-                                   yscale_eff <- if (data_range[2] <= panel$yscale[2] &&
-                                                     data_range[1] >= panel$yscale[1]) {
-                                     panel$yscale
+                                   # Genomic mode for full/diagonal styles.
+                                   # Use panel$yscale when a meaningful y scale was provided
+                                   # (y_windows or infer_scale_y()). panel$yscale already
+                                   # includes yExpansion from .expand_limits() in SeqPlot.
+                                   # Tiles with y outside yscale_eff are clamped to
+                                   # v0=v1=boundary (zero height → invisible).
+                                   # Fall back to data range only when panel$data_y is the
+                                   # default c(0,1) sentinel, meaning no explicit y scale
+                                   # was set.
+                                   yscale_eff <- if (!is.null(panel$data_y) &&
+                                                     !(panel$data_y[1] == 0 &&
+                                                       panel$data_y[2] == 1)) {
+                                     panel$yscale   # y_windows / infer_scale_y → includes yExpansion
                                    } else {
-                                     data_range
+                                     range(c(y0_m, y1_m))   # no explicit scale → auto-range
                                    }
                                  }
 
