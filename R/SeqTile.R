@@ -241,15 +241,8 @@ SeqTile <- R6::R6Class("SeqTile",
                               # Use unexpanded data bounds for clipping, not expanded viewport bounds
                               data_x <- panel$data_x %||% panel$xscale  # fallback if data_x not set
                               data_y <- panel$data_y %||% panel$yscale  # fallback if data_y not set
-                              # In rotated coordinates: x_rot = (x_orig + y_orig) / 2
-                              # A tile straddles the left boundary if: (x0 + y0)/2 < data_x[1] < (x1 + y1)/2
-                              # This is equivalent to: x0 + y0 < 2*data_x[1] < x1 + y1
-                              left_ok <- !((x0_orig[mask] + y0_orig[mask]) < 2*data_x[1] &
-                                           (x1_orig[mask] + y1_orig[mask]) > 2*data_x[1])
-                              # A tile straddles the right boundary if: (x0 + y0)/2 < data_x[2] < (x1 + y1)/2
-                              # This is equivalent to: x0 + y0 < 2*data_x[2] < x1 + y1
-                              right_ok <- !((x0_orig[mask] + y0_orig[mask]) < 2*data_x[2] &
-                                            (x1_orig[mask] + y1_orig[mask]) > 2*data_x[2])
+                              left_ok <- !(y0_orig[mask] < data_x[1])
+                              right_ok <- !(y1_orig[mask] > data_x[2])
                               # Apply filter: keep only tiles that don't straddle the diagonals
                               # NOTE: left_ok/right_ok have length sum(mask), not length(mask),
                               # so must use mask[mask] <- ... to avoid silent R vector recycling.
@@ -351,7 +344,22 @@ SeqTile <- R6::R6Class("SeqTile",
                                    y1_m <- y1_m * 2   # = y1_raw - x0_raw (full distance, bp)
                                    dist_max <- self$yDistMax %||% self$maxDist %||%
                                                max(y1_m, na.rm = TRUE)
-                                   yscale_eff <- c(0, dist_max)
+
+                                   # Apply yExpansion proportionally to the distance scale.
+                                   # If panel has expanded vs unexpanded bounds, calculate expansion padding
+                                   # and apply same relative padding to distance scale.
+                                   if (!is.null(panel$yscale) && !is.null(panel$data_y)) {
+                                     # Calculate padding from comparison of expanded vs unexpanded scales
+                                     genomic_data <- panel$data_y
+                                     genomic_expanded <- panel$yscale
+                                     lower_pad <- genomic_data[1] - genomic_expanded[1]
+                                     upper_pad <- genomic_expanded[2] - genomic_data[2]
+                                     # Apply same padding to distance scale: [-lower_pad, dist_max + upper_pad]
+                                     yscale_eff <- c(0 - lower_pad, dist_max + upper_pad)
+                                   } else {
+                                     # No expansion info available, use plain distance scale
+                                     yscale_eff <- c(0, dist_max)
+                                   }
                                  } else {
                                    # Genomic mode for full/diagonal styles:
                                    # use panel$yscale when it covers the data (set by y_windows=
