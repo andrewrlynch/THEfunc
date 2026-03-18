@@ -61,7 +61,8 @@ bar_gr <- GRanges(
 
 
 # ── Build plot ────────────────────────────────────────────────────────────────
-
+cytoband_hg38 = loadCytobands()
+cytoband_hg38 = makeGRangesFromDataFrame(cytoband_hg38, keep.extra.columns = T)
 plt <- SeqPlot(windows = win) %|%
 
   # Track 1: Ideogram (uses package cytoband data)
@@ -115,9 +116,5 @@ message("05_full_multitrack: continuous color OK")
 
 
 # ── Render ────────────────────────────────────────────────────────────────────
-grid::grid.newpage()
-plt$layoutGrid(trackHeights = c(0.3, 1, 1.5, 1.5, 1))
-plt$drawGrid()
-plt$drawAxes()
-plt$drawElements()
+plt$plot()
 message("05_full_multitrack: rendered OK")

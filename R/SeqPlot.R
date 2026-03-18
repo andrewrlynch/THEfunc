@@ -226,6 +226,24 @@ SeqPlot <- R6Class("SeqPlot",
                            next
                          }
 
+                         # --- Triangle/rectangle tiles with no explicit yDistMax ---
+                         # When yDistMax and maxDist are both NULL, .infer_scale_y() returns
+                         # NULL and the fallback would be c(0,1). Instead, use the x-window
+                         # width as the default distance axis range so the y-axis shows
+                         # meaningful distances and yExpansion is proportional to real bp.
+                         if (any(vapply(track$elements, function(e) {
+                           inherits(e, "SeqTile") &&
+                             !is.null(e$style) &&
+                             e$style %in% c("triangle", "rectangle") &&
+                             is.null(e$yDistMax) && is.null(e$maxDist)
+                         }, logical(1)))) {
+                           for (w in seq_len(n_windows)) {
+                             dist_max_w <- GenomicRanges::width(track$windows[w])
+                             yscales[[length(yscales) + 1]] <- c(0, dist_max_w)
+                           }
+                           next
+                         }
+
                          # --- Legacy path: auto-range from element data ---
                          disjoint <- isTRUE(track$aesthetics$disjointYScale)
 

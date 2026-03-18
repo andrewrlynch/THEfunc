@@ -242,3 +242,256 @@ test_that("SeqLine with aes(color=) resolves color", {
   expect_length(ln$aesthetics$color, 3L)
   expect_match(ln$aesthetics$color[1], "^#[0-9A-Fa-f]{6}$")
 })
+
+
+# ── SeqTile: style parameter tests ────────────────────────────────────────────
+
+test_that("SeqTile style parameter defaults to 'full'", {
+  tile <- SeqTile(.tile_gr(), aes = aes(y = cell_type))
+  expect_equal(tile$style, "full")
+})
+
+test_that("SeqTile style parameter accepts valid values", {
+  gr_x <- GenomicRanges::GRanges(
+    c("chr1:1-100", "chr1:101-200", "chr1:201-300"),
+    color = c("#FF0000", "#00FF00", "#0000FF")
+  )
+  gr_y <- GenomicRanges::GRanges(
+    c("chr1:50-150", "chr1:150-250", "chr1:250-350"),
+    color = c("#FF0000", "#00FF00", "#0000FF")
+  )
+
+  tile_full <- SeqTile(x = gr_x, y = gr_y, style = "full")
+  expect_equal(tile_full$style, "full")
+
+  tile_diag <- SeqTile(x = gr_x, y = gr_y, style = "diagonal")
+  expect_equal(tile_diag$style, "diagonal")
+
+  tile_tri <- SeqTile(x = gr_x, y = gr_y, style = "triangle")
+  expect_equal(tile_tri$style, "triangle")
+
+  tile_rect <- SeqTile(x = gr_x, y = gr_y, style = "rectangle")
+  expect_equal(tile_rect$style, "rectangle")
+})
+
+test_that("SeqTile invalid style value raises error", {
+  gr_x <- GenomicRanges::GRanges(
+    c("chr1:1-100"),
+    color = c("#FF0000")
+  )
+  gr_y <- GenomicRanges::GRanges(
+    c("chr1:50-150"),
+    color = c("#FF0000")
+  )
+
+  expect_error(
+    SeqTile(x = gr_x, y = gr_y, style = "invalid"),
+    "style must be one of"
+  )
+})
+
+test_that("SeqTile style != 'full' with no gr_y reverts to 'full' with warning", {
+  tile <- SeqTile(.tile_gr(), aes = aes(y = cell_type), style = "triangle")
+  expect_equal(tile$style, "full")
+  expect_warning(
+    SeqTile(.tile_gr(), aes = aes(y = cell_type), style = "triangle"),
+    "Reverting to 'full'"
+  )
+})
+
+test_that("SeqTile maxDist parameter accepts positive numeric values", {
+  gr_x <- GenomicRanges::GRanges(
+    c("chr1:1-100", "chr1:101-200"),
+    color = c("#FF0000", "#00FF00")
+  )
+  gr_y <- GenomicRanges::GRanges(
+    c("chr1:50-150", "chr1:150-250"),
+    color = c("#FF0000", "#00FF00")
+  )
+
+  tile <- SeqTile(x = gr_x, y = gr_y, style = "rectangle", maxDist = 50)
+  expect_equal(tile$maxDist, 50)
+})
+
+test_that("SeqTile maxDist must be positive", {
+  gr_x <- GenomicRanges::GRanges(c("chr1:1-100"), color = "#FF0000")
+  gr_y <- GenomicRanges::GRanges(c("chr1:50-150"), color = "#FF0000")
+
+  expect_error(
+    SeqTile(x = gr_x, y = gr_y, style = "rectangle", maxDist = -50),
+    "must be a positive number"
+  )
+})
+
+test_that("SeqTile rectangle style auto-computes maxDist from gr_y width", {
+  gr_x <- GenomicRanges::GRanges(
+    c("chr1:1-100", "chr1:101-200"),
+    color = c("#FF0000", "#00FF00")
+  )
+  gr_y <- GenomicRanges::GRanges(
+    c("chr1:50-150", "chr1:150-350"),  # widths: 100, 200
+    color = c("#FF0000", "#00FF00")
+  )
+
+  tile <- SeqTile(x = gr_x, y = gr_y, style = "rectangle")
+  # IRanges width = end - start + 1: chr1:150-350 has width 201
+  expect_equal(tile$maxDist, max(width(gr_y)))
+})
+
+test_that("SeqTile yCoordType is auto-set based on style", {
+  gr_x <- GenomicRanges::GRanges(c("chr1:1-100"), color = "#FF0000")
+  gr_y <- GenomicRanges::GRanges(c("chr1:50-150"), color = "#FF0000")
+
+  # full/diagonal styles → genomic
+  tile_full <- SeqTile(x = gr_x, y = gr_y, style = "full")
+  expect_equal(tile_full$yCoordType, "genomic")
+
+  # triangle/rectangle styles → distance
+  tile_tri <- SeqTile(x = gr_x, y = gr_y, style = "triangle")
+  expect_equal(tile_tri$yCoordType, "distance")
+})
+
+test_that("SeqTile rotation function .transform_to_rotated_coords works correctly", {
+  # Test a unit square: x in [0,1], y in [0,1]
+  # .transform_to_rotated_coords(x0, x1, y0, y1) returns the four diamond
+  # corners produced by the shear: x_rot = (x+y)/2,  y_rot = (y-x)/2
+  #
+  # For the unit square the four corners are:
+  #   left   = ((x0+y0)/2, (y0-x0)/2) = (0,  0)
+  #   bottom = ((x1+y0)/2, (y0-x1)/2) = (0.5, -0.5)
+  #   right  = ((x1+y1)/2, (y1-x1)/2) = (1,  0)
+  #   top    = ((x0+y1)/2, (y1-x0)/2) = (0.5,  0.5)
+  rot <- .transform_to_rotated_coords(0, 1, 0, 1)
+
+  expect_length(rot$x, 4)
+  expect_length(rot$y, 4)
+
+  # Verify exact coordinates for each diamond corner
+  expect_equal(rot$x, c(0, 0.5, 1, 0.5), tolerance = 1e-10)
+  expect_equal(rot$y, c(0, -0.5, 0, 0.5), tolerance = 1e-10)
+
+  # Check that all corners are finite
+  expect_true(all(is.finite(rot$x)))
+  expect_true(all(is.finite(rot$y)))
+})
+
+test_that("SeqTile coordCanvas includes original coordinates for 2D mode", {
+  gr_x <- GenomicRanges::GRanges(
+    c("chr1:1-100", "chr1:101-200"),
+    color = c("#FF0000", "#00FF00")
+  )
+  gr_y <- GenomicRanges::GRanges(
+    c("chr1:50-150", "chr1:150-250"),
+    color = c("#FF0000", "#00FF00")
+  )
+
+  tile <- SeqTile(x = gr_x, y = gr_y, style = "diagonal")
+
+  # Use a single window covering all contacts so layout_track has one panel
+  track_windows <- GenomicRanges::GRanges("chr1", IRanges::IRanges(1, 300))
+  layout_track <- list(
+    list(
+      xscale = c(1, 300),
+      yscale = c(1, 300),
+      inner = list(x0 = 0, x1 = 1, y0 = 0, y1 = 1),
+      y_sub_panels = NULL
+    )
+  )
+
+  tile$prep(layout_track, track_windows)
+
+  expect_true(length(tile$coordCanvas) > 0)
+  expect_false(is.null(tile$coordCanvas[[1]]))
+  coords <- tile$coordCanvas[[1]]
+  expect_true("x0_orig" %in% names(coords))
+  expect_true("x1_orig" %in% names(coords))
+  expect_true("y0_orig" %in% names(coords))
+  expect_true("y1_orig" %in% names(coords))
+})
+
+# ── SeqTile: yDistMax + distance mode ────────────────────────────────────────
+
+test_that("SeqTile yDistMax parameter is stored correctly", {
+  gr_x <- GenomicRanges::GRanges("chr1:1-100",  color = "#FF0000")
+  gr_y <- GenomicRanges::GRanges("chr1:50-150", color = "#FF0000")
+
+  tile <- SeqTile(x = gr_x, y = gr_y, style = "triangle",
+                  yDistMax = 5e6)
+  expect_equal(tile$yDistMax, 5e6)
+})
+
+test_that("SeqTile yDistMax defaults to NULL", {
+  gr_x <- GenomicRanges::GRanges("chr1:1-100",  color = "#FF0000")
+  gr_y <- GenomicRanges::GRanges("chr1:50-150", color = "#FF0000")
+
+  tile <- SeqTile(x = gr_x, y = gr_y, style = "triangle")
+  expect_null(tile$yDistMax)
+})
+
+test_that("SeqTile .infer_scale_y() returns continuous scale for distance mode", {
+  gr_x <- GenomicRanges::GRanges("chr1:1-100",   color = "#FF0000")
+  gr_y <- GenomicRanges::GRanges("chr1:50-1050", color = "#FF0000")
+
+  tile <- SeqTile(x = gr_x, y = gr_y, style = "triangle",
+                  yDistMax = 1000)
+
+  sc <- tile$.infer_scale_y()
+  expect_false(is.null(sc))
+  expect_equal(sc$limits, c(0, 1000))
+})
+
+test_that("SeqTile .infer_scale_y() returns genomic scale for full/diagonal style", {
+  gr_x <- GenomicRanges::GRanges("chr1:1-100",  color = "#FF0000")
+  gr_y <- GenomicRanges::GRanges("chr1:50-150", color = "#FF0000")
+
+  tile <- SeqTile(x = gr_x, y = gr_y, style = "diagonal")
+
+  sc <- tile$.infer_scale_y()
+  expect_false(is.null(sc))
+  # Genomic scale references gr_y, not a plain continuous scale
+  expect_false(inherits(sc, "SeqScaleContinuous"))
+})
+
+test_that("SeqTile prep() stores panelBounds for triangle style", {
+  # Two adjacent contacts on chr1.
+  gr_x <- GenomicRanges::GRanges(
+    c("chr1:100-200", "chr1:300-400"),
+    color = c("#FF0000", "#00FF00")
+  )
+  gr_y <- GenomicRanges::GRanges(
+    c("chr1:200-300", "chr1:400-500"),
+    color = c("#FF0000", "#00FF00")
+  )
+
+  tile <- SeqTile(x = gr_x, y = gr_y, style = "triangle")
+
+  track_windows <- GenomicRanges::GRanges("chr1", IRanges::IRanges(1, 600))
+  layout_track <- list(list(
+    xscale       = c(1, 600),
+    yscale       = c(1, 600),
+    inner        = list(x0 = 0.05, x1 = 0.95, y0 = 0.05, y1 = 0.95),
+    y_sub_panels = NULL
+  ))
+
+  tile$prep(layout_track, track_windows)
+
+  # coordCanvas populated and has expected columns
+  coords <- tile$coordCanvas[[1]]
+  expect_false(is.null(coords))
+  expect_true("x0" %in% names(coords))
+  expect_true("col" %in% names(coords))
+  # clip/xc/yc columns are no longer stored (viewport clipping used instead)
+  expect_false("clip" %in% names(coords))
+  expect_false("xc"   %in% names(coords))
+  expect_false("yc"   %in% names(coords))
+
+  # panelBounds stored with the inner panel NPC coordinates and genomic scales
+  pb <- tile$panelBounds[[1]]
+  expect_false(is.null(pb))
+  expect_equal(pb$x0, 0.05)
+  expect_equal(pb$x1, 0.95)
+  expect_equal(pb$y0, 0.05)
+  expect_equal(pb$y1, 0.95)
+  expect_true(!is.null(pb$xscale))
+  expect_true(!is.null(pb$yscale))
+})
