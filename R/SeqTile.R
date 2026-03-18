@@ -512,27 +512,18 @@ SeqTile <- R6::R6Class("SeqTile",
                                    }
                                  }
                                } else if (has_bounds && self$style == "triangle") {
-                                 # Triangle: clip each diamond against horizontal boundaries only.
-                                 # Diagonal edges (left/right) are handled by the straddling filter in prep(),
-                                 # which omits tiles that cross diagonal boundaries. Horizontal clipping ensures
-                                 # the bottom edge sits exactly at y=0 and the top edge sits at ymax.
+                                 # Triangle: clip each diamond against all 4 panel boundaries.
+                                 # Polygon clipping handles both diagonals (left/right) and horizontal edges
+                                 # (top/bottom) symmetrically, creating clean diagonal edges on both sides.
                                  for (i in seq_along(x0)) {
                                    diamond_x <- c(x0[i], xc[i], x1[i], xc[i], x0[i])  # closed polygon
                                    diamond_y <- c(yc[i], y0[i], yc[i], y1[i], yc[i])
 
-                                   # Clip at bottom (y = 0): keep points at or above
-                                   clipped <- self$.clip_polygon_horizontal_edge(
+                                   clipped <- self$.clip_polygon_rect(
                                      diamond_x, diamond_y,
-                                     y_val = pb$y0, keep_above = TRUE
+                                     xmin = pb$x0, xmax = pb$x1,
+                                     ymin = pb$y0, ymax = pb$y1
                                    )
-
-                                   # Clip at top (y = ymax): keep points at or below
-                                   if (length(clipped$x) > 0) {
-                                     clipped <- self$.clip_polygon_horizontal_edge(
-                                       clipped$x, clipped$y,
-                                       y_val = pb$y1, keep_above = FALSE
-                                     )
-                                   }
 
                                    if (length(clipped$x) > 0) {
                                      grid.polygon(
