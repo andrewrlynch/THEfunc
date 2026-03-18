@@ -140,12 +140,11 @@ tile_triangle <- SeqTile(
   x = x_gr,
   y = y_gr,
   style = "triangle",
-  yCoordType = "genomic",  # Y-axis uses genomic coordinates
   aesthetics = list(border = NA, lwd = 0.05)
 )
 
 stopifnot(tile_triangle$style == "triangle")
-stopifnot(tile_triangle$yCoordType == "genomic")
+stopifnot(tile_triangle$yCoordType == "distance")
 cat("   ✓ tile_triangle$style = ", tile_triangle$style, "\n")
 cat("   ✓ tile_triangle$yCoordType = ", tile_triangle$yCoordType, "\n")
 cat("   Note: 45° rotated with tiles as diamonds\n\n")
@@ -164,7 +163,6 @@ tile_rectangle <- SeqTile(
   y = y_gr,
   style = "rectangle",
   maxDist = maxDist_val,
-  yCoordType = "distance",  # Y-axis uses distance coordinates
   aesthetics = list(border = NA, lwd = 0.05)
 )
 

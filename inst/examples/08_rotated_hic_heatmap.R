@@ -200,8 +200,7 @@ tile_triangle <- SeqTile(
   x = x_gr,
   y = y_gr,
   style = "triangle",
-  yCoordType = "distance",
-  yDistMax = 1000000,
+  yDistMax = 2000000,
   aesthetics = list(border = NA, lwd = 0.1)
 )
 
@@ -223,83 +222,14 @@ tile_rect <- SeqTile(
   x = x_gr,
   y = y_gr,
   style = "rectangle",
-  yCoordType = "distance",
-  yDistMax = 1000000,
+  yDistMax = 2000000,
   aesthetics = list(border = NA, lwd = 0.05)
 )
 
 plt_rect <- SeqPlot(aesthetics = list(margins = list(top = 0.1, bottom = 0.2, left = 0.1, right = 0.1))) %|%
-  SeqTrack(aesthetics = list(windowBorder = NA, windowBackground = NA), windows = createGenomeWindows(c("chr5:42000000-45000000"))) %+%
+  SeqTrack(aesthetics = list(windowBorder = NA, windowBackground = NA), windows = createGenomeWindows(c("chr5:44000000-48000000"))) %+%
   tile_rect
 
 cat("   Window expansion: ±", maxDist/1e6, " Mb\n")
 cat("   Rendering rectangle style plot...\n")
-plt_rect$layoutGrid()
-plt_rect$drawGrid()
-plt_rect$drawAxes()
-plt_rect$drawElements()
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 5. Summary and Comparison
-# ──────────────────────────────────────────────────────────────────────────────
-
-cat("\n=== Summary: Choosing the Right Style ===\n\n")
-
-cat("FULL:\n")
-cat("  ✓ Shows complete picture\n")
-cat("  ✓ Good for presentations/publications\n")
-cat("  ✗ Wastes space on redundant data\n\n")
-
-cat("DIAGONAL:\n")
-cat("  ✓ Removes redundancy\n")
-cat("  ✓ Traditional rectangular tiles\n")
-cat("  ✗ Still uses considerable space\n\n")
-
-cat("TRIANGLE:\n")
-cat("  ✓ Most compact (45° rotation)\n")
-cat("  ✓ Standard in bioinformatics\n")
-cat("  ✓ Shows local TAD structure well\n")
-cat("  ✗ Less intuitive for unfamiliar viewers\n\n")
-
-cat("RECTANGLE:\n")
-cat("  ✓ Shows off-diagonal region\n")
-cat("  ✓ Window expansion captures long-range contacts\n")
-cat("  ✓ Great for TAD and boundary analysis\n")
-cat("  ✗ Requires appropriate maxDist parameter\n\n")
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 6. Data Properties Summary
-# ──────────────────────────────────────────────────────────────────────────────
-
-cat("=== Data Summary ===\n\n")
-
-cat("Contact Matrix Statistics:\n")
-cat("  Total contacts:", nrow(hic_matrix), "\n")
-cat("  Unique bins:", n_bins, "\n")
-cat("  Contact strength (min, median, max):\n")
-strength_summary <- summary(hic_matrix$strength)
-cat("    Min:   ", format(strength_summary["Min."], digits = 3), "\n")
-cat("    Median:", format(strength_summary["Median"], digits = 3), "\n")
-cat("    Max:   ", format(strength_summary["Max."], digits = 3), "\n\n")
-
-cat("Tiles per Style:\n")
-cat("  Full:      ", nrow(hic_matrix), " tiles\n")
-cat("  Diagonal:  ", sum(hic_matrix$bin_j >= hic_matrix$bin_i), " tiles\n")
-cat("  Triangle:  ~", sum(hic_matrix$bin_j > hic_matrix$bin_i), " tiles (subset)\n")
-cat("  Rectangle: ~", sum(hic_matrix$bin_j > hic_matrix$bin_i), " tiles (subset + expansion)\n\n")
-
-cat("=== Visualization Complete ===\n\n")
-
-cat("Key Features Demonstrated:\n")
-cat("  ✓ Linear coordinate transformation for 45° rotation\n")
-cat("  ✓ Diagonal filtering for upper triangle\n")
-cat("  ✓ Window expansion for rectangle style\n")
-cat("  ✓ Color mapping for contact strength\n")
-cat("  ✓ SeqPlot integration with SeqTrack\n")
-cat("  ✓ Genomic coordinate system handling\n\n")
-
-cat("Next Steps:\n")
-cat("  - Modify maxDist parameter to explore different scales\n")
-cat("  - Try different color palettes with seq_scale_fill_continuous()\n")
-cat("  - Combine multiple regions with different styles\n")
-cat("  - Add annotations using SeqAnnotation elements\n")
+plt_rect$plot()

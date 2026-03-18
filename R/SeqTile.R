@@ -48,13 +48,13 @@ SeqTile <- R6::R6Class("SeqTile",
                          #' @field style Visualization style: "full", "diagonal", "triangle", or "rectangle".
                          style = NULL,
 
-                         #' @field yCoordType Y-axis coordinate type: "genomic" or "distance".
+                         #' @field yCoordType Y-axis coordinate type: auto-set to "distance" for triangle/rectangle styles, "genomic" for full/diagonal.
                          yCoordType = NULL,
 
                          #' @field maxDist Maximum genomic distance for clipping.
                          maxDist = NULL,
 
-                         #' @field yDistMax Maximum distance for the y-axis when yCoordType = "distance".
+                         #' @field yDistMax Maximum distance (bp) for the y-axis in triangle/rectangle styles.
                          #'   If NULL, falls back to maxDist. Only used with rotated styles.
                          yDistMax = NULL,
 
@@ -77,16 +77,14 @@ SeqTile <- R6::R6Class("SeqTile",
                          #' @param style Visualization style: "full" (default), "diagonal",
                          #'   "triangle", or "rectangle". Only applies when `y=` GRanges
                          #'   is provided (2D genomic mode).
-                         #' @param yCoordType Y-axis coordinate type: "genomic" (default) or
-                         #'   "distance". Only used with rotated styles.
                          #' @param maxDist Maximum genomic distance for clipping. If NULL,
                          #'   defaults to max(width(y)) for "rectangle" style.
-                         #' @param yDistMax Maximum distance (bp) shown on the y-axis when
-                         #'   `yCoordType = "distance"`. If NULL, falls back to `maxDist`.
+                         #' @param yDistMax Maximum distance (bp) shown on the y-axis for
+                         #'   triangle/rectangle styles. If NULL, falls back to `maxDist`.
                          initialize = function(gr = NULL, x = NULL, y = NULL,
                                                groupCol = NULL, aesthetics = list(),
                                                aes = NULL, scale = NULL,
-                                               style = "full", yCoordType = "genomic",
+                                               style = "full",
                                                maxDist = NULL, yDistMax = NULL) {
                            # resolve primary ranges (x or legacy gr)
                            if (!is.null(x)) {
@@ -146,9 +144,9 @@ SeqTile <- R6::R6Class("SeqTile",
                            self$aesthetics <- modifyList(self$defaultAesthetics, aesthetics)
 
                            # Validate and store style parameters
-                           style <- .validate_style_params(style, self$gr_y, maxDist, yCoordType)
+                           style <- .validate_style_params(style, self$gr_y, maxDist)
                            self$style <- style
-                           self$yCoordType <- yCoordType
+                           self$yCoordType <- if (style %in% c("triangle", "rectangle")) "distance" else "genomic"
 
                            # Auto-compute maxDist for rectangle style if needed
                            if (style == "rectangle" && is.null(maxDist)) {
@@ -235,6 +233,26 @@ SeqTile <- R6::R6Class("SeqTile",
 
                              panel <- layout_track[[w]]
 
+                            # Filter out tiles that straddle the diagonal edges (for triangle/rectangle styles)
+                            # This creates clean straight diagonal edges by tile omission
+                            if (self$style %in% c("triangle", "rectangle") && !is.null(y0_orig)) {
+                              xscale <- panel$xscale
+                              # In rotated coordinates: x_rot = (x_orig + y_orig) / 2
+                              # A tile straddles the left boundary if: (x0 + y0)/2 < xscale[1] < (x1 + y1)/2
+                              # This is equivalent to: x0 + y0 < 2*xscale[1] < x1 + y1
+                              left_ok <- !((x0_orig[mask] + y0_orig[mask]) < 2*xscale[1] &
+                                           (x1_orig[mask] + y1_orig[mask]) > 2*xscale[1])
+                              # A tile straddles the right boundary if: (x0 + y0)/2 < xscale[2] < (x1 + y1)/2
+                              # This is equivalent to: x0 + y0 < 2*xscale[2] < x1 + y1
+                              right_ok <- !((x0_orig[mask] + y0_orig[mask]) < 2*xscale[2] &
+                                            (x1_orig[mask] + y1_orig[mask]) > 2*xscale[2])
+                              # Apply filter: keep only tiles that don't straddle the diagonals
+                              # NOTE: left_ok/right_ok have length sum(mask), not length(mask),
+                              # so must use mask[mask] <- ... to avoid silent R vector recycling.
+                              mask[mask] <- left_ok & right_ok
+                              if (sum(mask) == 0) next
+                            }
+
                              # For rotated styles (triangle, rectangle), apply linear coordinate transformation
                              # in genomic space BEFORE canvas normalization: x_rot = (x+y)/2, y_rot = (y-x)/2
                              x0_work <- x0[mask]
@@ -287,8 +305,7 @@ SeqTile <- R6::R6Class("SeqTile",
                                # Genomic y-axis
                                # For rotated styles, use already-transformed y0_work, y1_work
                                if (self$style %in% c("triangle", "rectangle")) {
-                                 # For rotated styles, always use transformed distance coordinates
-                                 # yCoordType is just metadata about axis representation (stored but not used for computation)
+                                 # For rotated styles, use transformed distance coordinates (y_rot)
                                  y0_m <- y0_work
                                  y1_m <- y1_work
                                } else {
@@ -323,8 +340,7 @@ SeqTile <- R6::R6Class("SeqTile",
                                } else {
                                  # Single y-window — determine effective yscale and v0/v1.
 
-                                 if (self$style %in% c("triangle", "rectangle") &&
-                                     self$yCoordType == "distance") {
+                                 if (self$style %in% c("triangle", "rectangle")) {
                                    # Distance mode: use FULL distance (2 × half-distance y_rot).
                                    # Aligns with the [0, yDistMax] scale from .infer_scale_y().
                                    y0_m <- y0_m * 2   # = y0_raw - x1_raw (full distance, bp)
@@ -333,7 +349,7 @@ SeqTile <- R6::R6Class("SeqTile",
                                                max(y1_m, na.rm = TRUE)
                                    yscale_eff <- c(0, dist_max)
                                  } else {
-                                   # Genomic mode (full / diagonal / triangle / rectangle):
+                                   # Genomic mode for full/diagonal styles:
                                    # use panel$yscale when it covers the data (set by y_windows=
                                    # or .infer_scale_y()); fall back to data range when
                                    # panel$yscale is the default c(0,1).
@@ -380,7 +396,9 @@ SeqTile <- R6::R6Class("SeqTile",
                                    iy0 <- panel$inner$y0; iy1 <- panel$inner$y1
                                    self$panelBounds[[w]] <- list(
                                      x0 = ix0, x1 = ix1,
-                                     y0 = iy0, y1 = iy1
+                                     y0 = iy0, y1 = iy1,
+                                     xscale = panel$xscale,
+                                     yscale = yscale_eff
                                    )
 
                                    self$coordCanvas[[w]] <- data.frame(
@@ -494,22 +512,27 @@ SeqTile <- R6::R6Class("SeqTile",
                                    }
                                  }
                                } else if (has_bounds && self$style == "triangle") {
-                                 # Triangle: clip against diagonal bounds (45° rotated square)
-                                 # Convert panel bounds to rotated (u,v) coordinates
-                                 u0 <- (pb$x0 + pb$y0) / 2  # lower-left corner rotated u-coordinate
-                                 u1 <- (pb$x1 + pb$y1) / 2  # upper-right corner rotated u-coordinate
-                                 v0 <- (pb$x0 - pb$y1) / 2  # lower-right corner rotated v-coordinate
-                                 v1 <- (pb$x1 - pb$y0) / 2  # upper-left corner rotated v-coordinate
-
+                                 # Triangle: clip each diamond against horizontal boundaries only.
+                                 # Diagonal edges (left/right) are handled by the straddling filter in prep(),
+                                 # which omits tiles that cross diagonal boundaries. Horizontal clipping ensures
+                                 # the bottom edge sits exactly at y=0 and the top edge sits at ymax.
                                  for (i in seq_along(x0)) {
                                    diamond_x <- c(x0[i], xc[i], x1[i], xc[i], x0[i])  # closed polygon
                                    diamond_y <- c(yc[i], y0[i], yc[i], y1[i], yc[i])
 
-                                   clipped <- self$.clip_polygon_diag(
+                                   # Clip at bottom (y = 0): keep points at or above
+                                   clipped <- self$.clip_polygon_horizontal_edge(
                                      diamond_x, diamond_y,
-                                     u0 = u0, u1 = u1,
-                                     v0 = v0, v1 = v1
+                                     y_val = pb$y0, keep_above = TRUE
                                    )
+
+                                   # Clip at top (y = ymax): keep points at or below
+                                   if (length(clipped$x) > 0) {
+                                     clipped <- self$.clip_polygon_horizontal_edge(
+                                       clipped$x, clipped$y,
+                                       y_val = pb$y1, keep_above = FALSE
+                                     )
+                                   }
 
                                    if (length(clipped$x) > 0) {
                                      grid.polygon(
@@ -627,33 +650,9 @@ SeqTile <- R6::R6Class("SeqTile",
                         },
 
                         #' @description
-                        #' Clip a convex polygon against diagonal clipping region (rotated 45° square).
-                        #' Used for "triangle" style to create diagonal-edged boundaries.
-                        #'
-                        #' @param x,y  Numeric vectors of polygon vertices (must be closed)
-                        #' @param u0,u1,v0,v1  Bounds in rotated (u,v) coordinate system
-                        #'
-                        #' @return List(x, y) with clipped polygon vertices
-                        .clip_polygon_diag = function(x, y, u0, u1, v0, v1) {
-                          # Clip against 4 diagonal edges using rotated coordinate inequalities
-                          clip_u_min = function(x, y) self$.clip_polygon_diag_edge(x, y, "u_min", u0)
-                          clip_u_max = function(x, y) self$.clip_polygon_diag_edge(x, y, "u_max", u1)
-                          clip_v_min = function(x, y) self$.clip_polygon_diag_edge(x, y, "v_min", v0)
-                          clip_v_max = function(x, y) self$.clip_polygon_diag_edge(x, y, "v_max", v1)
-
-                          result <- list(x = x, y = y)
-                          for (clip_fn in list(clip_u_min, clip_u_max, clip_v_min, clip_v_max)) {
-                            result <- clip_fn(result$x, result$y)
-                            if (length(result$x) == 0) break
-                          }
-                          result
-                        },
-
-                        #' @description
-                        #' Clip polygon against a single diagonal edge in rotated space.
-                        #' @param edge One of: "u_min" (u >= val), "u_max" (u <= val),
-                        #'             "v_min" (v >= val), "v_max" (v <= val)
-                        .clip_polygon_diag_edge = function(x, y, edge, val) {
+                        #' Clip polygon against a horizontal line y = y_val.
+                        #' keep_above=TRUE keeps region y >= y_val, FALSE keeps y <= y_val.
+                        .clip_polygon_horizontal_edge = function(x, y, y_val, keep_above = FALSE) {
                           if (length(x) == 0) return(list(x = numeric(0), y = numeric(0)))
 
                           if (x[1] != x[length(x)] || y[1] != y[length(y)]) {
@@ -665,58 +664,38 @@ SeqTile <- R6::R6Class("SeqTile",
                           out_x <- numeric(0)
                           out_y <- numeric(0)
 
-                          if (edge == "u_min") {
-                            inside <- function(xx, yy) (xx + yy) / 2 >= val
-                            intersect <- function(x1, y1, x2, y2) {
-                              denom <- x2 - x1 + y2 - y1
-                              if (abs(denom) < 1e-10) return(list(x = x1, y = y1))
-                              t <- (2 * val - x1 - y1) / denom
-                              list(x = x1 + t * (x2 - x1), y = y1 + t * (y2 - y1))
-                            }
-                          } else if (edge == "u_max") {
-                            inside <- function(xx, yy) (xx + yy) / 2 <= val
-                            intersect <- function(x1, y1, x2, y2) {
-                              denom <- x2 - x1 + y2 - y1
-                              if (abs(denom) < 1e-10) return(list(x = x1, y = y1))
-                              t <- (2 * val - x1 - y1) / denom
-                              list(x = x1 + t * (x2 - x1), y = y1 + t * (y2 - y1))
-                            }
-                          } else if (edge == "v_min") {
-                            inside <- function(xx, yy) (xx - yy) / 2 >= val
-                            intersect <- function(x1, y1, x2, y2) {
-                              denom <- x2 - x1 - (y2 - y1)
-                              if (abs(denom) < 1e-10) return(list(x = x1, y = y1))
-                              t <- (2 * val - x1 + y1) / denom
-                              list(x = x1 + t * (x2 - x1), y = y1 + t * (y2 - y1))
-                            }
-                          } else if (edge == "v_max") {
-                            inside <- function(xx, yy) (xx - yy) / 2 <= val
-                            intersect <- function(x1, y1, x2, y2) {
-                              denom <- x2 - x1 - (y2 - y1)
-                              if (abs(denom) < 1e-10) return(list(x = x1, y = y1))
-                              t <- (2 * val - x1 + y1) / denom
-                              list(x = x1 + t * (x2 - x1), y = y1 + t * (y2 - y1))
-                            }
+                          inside <- function(yi) {
+                            if (keep_above) yi >= y_val else yi <= y_val
                           }
 
                           for (i in 1:n) {
-                            x1 <- x[i];  y1 <- y[i]
+                            x1 <- x[i];   y1 <- y[i]
                             x2 <- x[i+1]; y2 <- y[i+1]
-                            inside1 <- inside(x1, y1)
-                            inside2 <- inside(x2, y2)
+                            i1 <- inside(y1)
+                            i2 <- inside(y2)
 
-                            if (inside2) {
-                              if (!inside1) {
-                                inter <- intersect(x1, y1, x2, y2)
-                                out_x <- c(out_x, inter$x)
-                                out_y <- c(out_y, inter$y)
+                            if (i2) {
+                              if (!i1) {
+                                # Crossing from outside to inside: interpolate
+                                if (abs(y2 - y1) > 1e-12) {
+                                  t <- (y_val - y1) / (y2 - y1)
+                                  out_x <- c(out_x, x1 + t * (x2 - x1))
+                                } else {
+                                  out_x <- c(out_x, x1)
+                                }
+                                out_y <- c(out_y, y_val)
                               }
                               out_x <- c(out_x, x2)
                               out_y <- c(out_y, y2)
-                            } else if (inside1) {
-                              inter <- intersect(x1, y1, x2, y2)
-                              out_x <- c(out_x, inter$x)
-                              out_y <- c(out_y, inter$y)
+                            } else if (i1) {
+                              # Crossing from inside to outside: interpolate
+                              if (abs(y2 - y1) > 1e-12) {
+                                t <- (y_val - y1) / (y2 - y1)
+                                out_x <- c(out_x, x1 + t * (x2 - x1))
+                              } else {
+                                out_x <- c(out_x, x1)
+                              }
+                              out_y <- c(out_y, y_val)
                             }
                           }
 
@@ -725,8 +704,7 @@ SeqTile <- R6::R6Class("SeqTile",
 
                         .infer_scale_y = function() {
                            if (!is.null(self$gr_y)) {
-                             if (self$style %in% c("triangle", "rectangle") &&
-                                 self$yCoordType == "distance") {
+                             if (self$style %in% c("triangle", "rectangle")) {
                                # Distance axis: continuous scale [0, yDistMax] in bp.
                                # yDistMax takes priority; fall back to maxDist.
                                dist_max <- self$yDistMax %||% self$maxDist
@@ -749,7 +727,7 @@ SeqTile <- R6::R6Class("SeqTile",
 # Helper functions for SeqTile style support
 
 #' @keywords internal
-.validate_style_params <- function(style, gr_y, maxDist, yCoordType) {
+.validate_style_params <- function(style, gr_y, maxDist) {
   valid_styles <- c("full", "diagonal", "triangle", "rectangle")
   if (!style %in% valid_styles) {
     stop("style must be one of: ", paste(valid_styles, collapse = ", "))
@@ -764,10 +742,6 @@ SeqTile <- R6::R6Class("SeqTile",
     if (!is.numeric(maxDist) || maxDist <= 0) {
       stop("maxDist must be a positive number")
     }
-  }
-
-  if (!yCoordType %in% c("genomic", "distance")) {
-    stop("yCoordType must be 'genomic' or 'distance'")
   }
 
   style

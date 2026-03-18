@@ -173,7 +173,7 @@ tile <- SeqTile(x = x_gr, y = y_gr, style = "diagonal")
 ### 3. `style = "triangle"` (45° Rotated)
 
 ```r
-tile <- SeqTile(x = x_gr, y = y_gr, style = "triangle", yCoordType = "distance")
+tile <- SeqTile(x = x_gr, y = y_gr, style = "triangle")
 ```
 
 **Characteristics:**
@@ -235,7 +235,6 @@ tile <- SeqTile(x = x_gr, y = y_gr, style = "rectangle", maxDist = 2000)
 | `x` | GRanges | required | Genomic ranges for x-axis |
 | `y` | GRanges | NULL | Genomic ranges for y-axis (2D mode) |
 | `style` | character | "full" | Visualization style: "full", "diagonal", "triangle", "rectangle" |
-| `yCoordType` | character | "genomic" | Y-axis type: "genomic" or "distance" (rotated styles) |
 | `maxDist` | numeric | NULL | Maximum distance for rectangle style (auto-computed if NULL) |
 
 ### Other Parameters
