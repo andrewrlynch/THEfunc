@@ -343,18 +343,26 @@ SeqTile <- R6::R6Class("SeqTile",
                                    y0_m <- y0_m * 2   # = y0_raw - x1_raw (full distance, bp)
                                    y1_m <- y1_m * 2   # = y1_raw - x0_raw (full distance, bp)
                                    dist_max <- self$yDistMax %||% self$maxDist %||%
-                                               max(y1_m, na.rm = TRUE)
+                                               diff(panel$data_x %||% panel$xscale)
 
                                    # Apply yExpansion proportionally to the distance scale.
-                                   # If panel has expanded vs unexpanded bounds, calculate expansion padding
-                                   # and apply same relative padding to distance scale.
+                                   # Derive expansion fractions from the panel's expanded vs unexpanded
+                                   # yscale bounds, then apply proportionally to dist_max.
+                                   # This correctly handles BOTH cases:
+                                   #   - yDistMax set:     panel$data_y = c(0, dist_max), fracs are correct
+                                   #   - yDistMax not set: panel$data_y = c(0, window_width) (set by
+                                   #     SeqPlot's new fallback), fracs are also correct
                                    if (!is.null(panel$yscale) && !is.null(panel$data_y)) {
-                                     # Calculate padding from comparison of expanded vs unexpanded scales
-                                     genomic_data <- panel$data_y
-                                     genomic_expanded <- panel$yscale
-                                     lower_pad <- genomic_data[1] - genomic_expanded[1]
-                                     upper_pad <- genomic_expanded[2] - genomic_data[2]
-                                     # Apply same padding to distance scale: [-lower_pad, dist_max + upper_pad]
+                                     span_panel <- diff(panel$data_y)
+                                     if (span_panel > 0) {
+                                       frac_lower <- max(0, panel$data_y[1] - panel$yscale[1]) / span_panel
+                                       frac_upper <- max(0, panel$yscale[2] - panel$data_y[2]) / span_panel
+                                       lower_pad <- frac_lower * dist_max
+                                       upper_pad <- frac_upper * dist_max
+                                     } else {
+                                       lower_pad <- 0
+                                       upper_pad <- 0
+                                     }
                                      yscale_eff <- c(0 - lower_pad, dist_max + upper_pad)
                                    } else {
                                      # No expansion info available, use plain distance scale
