@@ -327,10 +327,18 @@ SeqTile <- R6::R6Class("SeqTile",
                              u1 <- (x1_work - panel$xscale[1]) / diff(panel$xscale)
                              u0_raw <- u0
                              u1_raw <- u1
-                             # Rotated styles need unclamped u for clip detection; clamp others now
+                             # Rotated styles need unclamped u for clip detection; clamp others now.
+                             # Clamp to DATA boundaries (not expanded xscale) so tiles don't bleed
+                             # into the xExpansion gap. Fall back to [0,1] when data_x is absent.
                              if (!self$style %in% c("triangle", "rectangle")) {
-                               u0 <- pmax(pmin(u0, 1), 0)
-                               u1 <- pmax(pmin(u1, 1), 0)
+                               if (!is.null(panel$data_x) && diff(panel$xscale) > 0) {
+                                 u_lo <- (panel$data_x[1] - panel$xscale[1]) / diff(panel$xscale)
+                                 u_hi <- (panel$data_x[2] - panel$xscale[1]) / diff(panel$xscale)
+                               } else {
+                                 u_lo <- 0; u_hi <- 1
+                               }
+                               u0 <- pmax(pmin(u0, u_hi), u_lo)
+                               u1 <- pmax(pmin(u1, u_hi), u_lo)
                              }
 
                              if (!is.null(y0_raw)) {
@@ -426,10 +434,22 @@ SeqTile <- R6::R6Class("SeqTile",
                                  v1     <- (y1_m - yscale_eff[1]) / diff(yscale_eff)
                                  v0_raw <- v0
                                  v1_raw <- v1
-                                 # Clamp for non-rotated styles only
+                                 # Clamp for non-rotated styles only.
+                                 # Clamp to DATA boundaries (not expanded yscale) so tiles don't
+                                 # bleed into the yExpansion gap.  Tiles entirely outside the data
+                                 # range collapse to zero height and become invisible.  Tiles
+                                 # straddling the boundary are clipped to start/end at the boundary.
                                  if (!self$style %in% c("triangle", "rectangle")) {
-                                   v0 <- pmax(pmin(v0, 1), 0)
-                                   v1 <- pmax(pmin(v1, 1), 0)
+                                   if (!is.null(panel$data_y) &&
+                                       !(panel$data_y[1] == 0 && panel$data_y[2] == 1) &&
+                                       diff(yscale_eff) > 0) {
+                                     v_lo <- (panel$data_y[1] - yscale_eff[1]) / diff(yscale_eff)
+                                     v_hi <- (panel$data_y[2] - yscale_eff[1]) / diff(yscale_eff)
+                                   } else {
+                                     v_lo <- 0; v_hi <- 1
+                                   }
+                                   v0 <- pmax(pmin(v0, v_hi), v_lo)
+                                   v1 <- pmax(pmin(v1, v_hi), v_lo)
                                  }
 
                                  # Canvas coordinates — keep unclamped so the bounding box
