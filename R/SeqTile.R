@@ -233,19 +233,31 @@ SeqTile <- R6::R6Class("SeqTile",
 
                              panel <- layout_track[[w]]
 
-                            # Filter out tiles that straddle the diagonal edges (for triangle/rectangle styles)
-                            # This creates clean straight diagonal edges by tile omission.
-                            # CRITICAL: Use UNEXPANDED bounds (panel$data_x/data_y) for clipping decisions,
-                            # not expanded bounds (panel$xscale/yscale). Expansion is for viewport display only.
+                            # Filter out tiles outside the diagonal edges (for triangle/rectangle styles).
+                            # CRITICAL: Use UNEXPANDED bounds (panel$data_x) for clipping decisions,
+                            # not expanded bounds (panel$xscale). Expansion is for viewport display only.
+                            # NOTE: left_ok/right_ok have length sum(mask), not length(mask),
+                            # so must use mask[mask] <- ... to avoid silent R vector recycling.
                             if (self$style %in% c("triangle", "rectangle") && !is.null(y0_orig)) {
-                              # Use unexpanded data bounds for clipping, not expanded viewport bounds
                               data_x <- panel$data_x %||% panel$xscale  # fallback if data_x not set
-                              data_y <- panel$data_y %||% panel$yscale  # fallback if data_y not set
-                              left_ok <- !(y0_orig[mask] < data_x[1])
-                              right_ok <- !(y1_orig[mask] > data_x[2])
-                              # Apply filter: keep only tiles that don't straddle the diagonals
-                              # NOTE: left_ok/right_ok have length sum(mask), not length(mask),
-                              # so must use mask[mask] <- ... to avoid silent R vector recycling.
+
+                              if (self$style == "triangle") {
+                                # Triangle: tile omission creates clean diagonal edges.
+                                # Simple y-coord check works because Hi-C is symmetric (same chr, same scale).
+                                # Removes ANY tile that has y < window_min or y > window_max.
+                                left_ok  <- !(y0_orig[mask] < data_x[1])
+                                right_ok <- !(y1_orig[mask] > data_x[2])
+                              } else {
+                                # Rectangle: straddling tiles at the diagonal boundaries must be KEPT
+                                # so polygon clipping in draw() can produce clean diagonal edges.
+                                # Only remove tiles with NO x_rot overlap with [window_min, window_max]:
+                                #   x_rot range of a tile = [(x0+y0)/2, (x1+y1)/2]
+                                #   Entirely left  → (x1+y1)/2 < window_min → x1+y1 < 2*window_min
+                                #   Entirely right → (x0+y0)/2 > window_max → x0+y0 > 2*window_max
+                                left_ok  <- !((x1_orig[mask] + y1_orig[mask]) < 2 * data_x[1])
+                                right_ok <- !((x0_orig[mask] + y0_orig[mask]) > 2 * data_x[2])
+                              }
+
                               mask[mask] <- left_ok & right_ok
                               if (sum(mask) == 0) next
                             }
@@ -420,10 +432,13 @@ SeqTile <- R6::R6Class("SeqTile",
                                      xscale = panel$xscale,
                                      yscale = yscale_eff,
                                      # Unexpanded data range in distance coords [0, dist_max].
-                                     # Used in draw() to clip triangles at data boundaries
-                                     # (not physical panel edges) so yExpansion creates gaps.
+                                     # Used in draw() to clip at data boundaries (not physical
+                                     # panel edges) so yExpansion creates proper gaps.
                                      data_yscale = if (self$style %in% c("triangle", "rectangle"))
-                                       c(0, dist_max) else NULL
+                                       c(0, dist_max) else NULL,
+                                     # Unexpanded x window range [window_min, window_max].
+                                     # Used in rectangle draw() to compute diagonal clip NPC positions.
+                                     data_xscale = panel$data_x
                                    )
 
                                    self$coordCanvas[[w]] <- data.frame(
@@ -517,15 +532,41 @@ SeqTile <- R6::R6Class("SeqTile",
                                yc <- (y0 + y1) / 2
 
                                if (has_bounds && self$style == "rectangle") {
-                                 # Rectangle: clip against axis-aligned rectangular bounds
+                                 # Rectangle: clip each diamond against all 4 data boundaries.
+                                 # Clip at DATA boundaries (not physical panel edges) so:
+                                 #   - yExpansion creates proper gaps at top/bottom
+                                 #   - xExpansion doesn't allow tiles to bleed into x-margins
+                                 #   - Diagonal edges (left/right in rotated space) come from
+                                 #     polygon clipping, not tile omission (unlike triangle).
+                                 span_npc_x <- pb$x1 - pb$x0
+                                 span_npc_y <- pb$y1 - pb$y0
+                                 x_span <- diff(pb$xscale)
+                                 y_span <- diff(pb$yscale)
+
+                                 # X clip: window_min and window_max → the diagonal edges
+                                 if (!is.null(pb$data_xscale) && x_span > 0) {
+                                   x_left  <- pb$x0 + (pb$data_xscale[1] - pb$xscale[1]) / x_span * span_npc_x
+                                   x_right <- pb$x0 + (pb$data_xscale[2] - pb$xscale[1]) / x_span * span_npc_x
+                                 } else {
+                                   x_left <- pb$x0; x_right <- pb$x1
+                                 }
+
+                                 # Y clip: distance=0 (bottom) and dist_max (top) → horizontal edges
+                                 if (!is.null(pb$data_yscale) && y_span > 0) {
+                                   y_bottom <- pb$y0 + (pb$data_yscale[1] - pb$yscale[1]) / y_span * span_npc_y
+                                   y_top    <- pb$y0 + (pb$data_yscale[2] - pb$yscale[1]) / y_span * span_npc_y
+                                 } else {
+                                   y_bottom <- pb$y0; y_top <- pb$y1
+                                 }
+
                                  for (i in seq_along(x0)) {
                                    diamond_x <- c(x0[i], xc[i], x1[i], xc[i], x0[i])  # closed polygon
                                    diamond_y <- c(yc[i], y0[i], yc[i], y1[i], yc[i])
 
                                    clipped <- self$.clip_polygon_rect(
                                      diamond_x, diamond_y,
-                                     xmin = pb$x0, xmax = pb$x1,
-                                     ymin = pb$y0, ymax = pb$y1
+                                     xmin = x_left, xmax = x_right,
+                                     ymin = y_bottom, ymax = y_top
                                    )
 
                                    if (length(clipped$x) > 0) {
