@@ -31,7 +31,7 @@ set.seed(123)
 # Bin size: 100 kb
 region_start <- 40e6
 region_end <- 50e6
-bin_size <- 100000
+bin_size <- 50000
 n_bins <- (region_end - region_start) / bin_size
 
 # Create bin boundaries
@@ -157,14 +157,13 @@ tile_full <- SeqTile(
 )
 
 plt_full <- SeqPlot(windows = window) %|%
-  SeqTrack(aesthetics = list(windowBorder = NA, windowBackground = NA)) %+%
+  SeqTrack(aesthetics = list(windowBorder = NA, windowBackground = NA), windows = createGenomeWindows(c("chr5:42000000-44000000")),
+           #y_windows = createGenomeWindows(c("chr5:42000000-44000000"))
+           ) %+%
   tile_full
 
 cat("   Rendering full style plot...\n")
-plt_full$layoutGrid()
-plt_full$drawGrid()
-plt_full$drawAxes()
-plt_full$drawElements()
+plt_full$plot()
 
 # Style 2: Diagonal only
 cat("\n   Style 2: DIAGONAL (Lower diagonal only)\n")
@@ -200,11 +199,11 @@ tile_triangle <- SeqTile(
   x = x_gr,
   y = y_gr,
   style = "triangle",
-  yDistMax = 2000000,
+  yDistMax = 4000000,
   aesthetics = list(border = NA, lwd = 0.1)
 )
 
-plt_triangle <- SeqPlot(windows = window, aesthetics = list(margins = list(top = 0.05, bottom = 0.1, left = 0.1, right = 0.05))) %|%
+plt_triangle <- SeqPlot(windows = window, aesthetics = list(xExpand = c(0, 0), margins = list(top = 0.05, bottom = 0.1, left = 0.1, right = 0.05))) %|%
   SeqTrack(aesthetics = list(windowBorder = NA, windowBackground = NA), windows = createGenomeWindows("chr5:44000000-48000000")) %+%
   tile_triangle
 

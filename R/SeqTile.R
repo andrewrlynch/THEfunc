@@ -234,27 +234,22 @@ SeqTile <- R6::R6Class("SeqTile",
                              panel <- layout_track[[w]]
 
                             # Filter out tiles that straddle the diagonal edges (for triangle/rectangle styles)
-                            # This creates clean straight diagonal edges by tile omission
+                            # This creates clean straight diagonal edges by tile omission.
+                            # CRITICAL: Use UNEXPANDED bounds (panel$data_x/data_y) for clipping decisions,
+                            # not expanded bounds (panel$xscale/yscale). Expansion is for viewport display only.
                             if (self$style %in% c("triangle", "rectangle") && !is.null(y0_orig)) {
-                              xscale <- panel$xscale
+                              # Use unexpanded data bounds for clipping, not expanded viewport bounds
+                              data_x <- panel$data_x %||% panel$xscale  # fallback if data_x not set
+                              data_y <- panel$data_y %||% panel$yscale  # fallback if data_y not set
                               # In rotated coordinates: x_rot = (x_orig + y_orig) / 2
-                              # A tile straddles the left boundary if: (x0 + y0)/2 < xscale[1] < (x1 + y1)/2
-                              # This is equivalent to: x0 + y0 < 2*xscale[1] < x1 + y1
-                              left_ok <- !((x0_orig[mask] + y0_orig[mask]) < 2*xscale[1] &
-                                           (x1_orig[mask] + y1_orig[mask]) > 2*xscale[1])
-                              # A tile straddles the right boundary if: (x0 + y0)/2 < xscale[2] < (x1 + y1)/2
-                              # This is equivalent to: x0 + y0 < 2*xscale[2] < x1 + y1
-                              # For triangle/rectangle styles: also remove tiles where x1 + y1 >= 2*xscale[2]
-                              # (tiles at or beyond the right boundary) to ensure symmetric clipping
-                              if (self$style == "triangle") {
-                                # Triangle: remove tiles that cross OR sit at the right boundary
-                                right_ok <- !((x0_orig[mask] + y0_orig[mask]) < 2*xscale[2] &
-                                              (x1_orig[mask] + y1_orig[mask]) >= 2*xscale[2])
-                              } else {
-                                # Rectangle: original behavior (remove only crossing tiles)
-                                right_ok <- !((x0_orig[mask] + y0_orig[mask]) < 2*xscale[2] &
-                                              (x1_orig[mask] + y1_orig[mask]) > 2*xscale[2])
-                              }
+                              # A tile straddles the left boundary if: (x0 + y0)/2 < data_x[1] < (x1 + y1)/2
+                              # This is equivalent to: x0 + y0 < 2*data_x[1] < x1 + y1
+                              left_ok <- !((x0_orig[mask] + y0_orig[mask]) < 2*data_x[1] &
+                                           (x1_orig[mask] + y1_orig[mask]) > 2*data_x[1])
+                              # A tile straddles the right boundary if: (x0 + y0)/2 < data_x[2] < (x1 + y1)/2
+                              # This is equivalent to: x0 + y0 < 2*data_x[2] < x1 + y1
+                              right_ok <- !((x0_orig[mask] + y0_orig[mask]) < 2*data_x[2] &
+                                            (x1_orig[mask] + y1_orig[mask]) > 2*data_x[2])
                               # Apply filter: keep only tiles that don't straddle the diagonals
                               # NOTE: left_ok/right_ok have length sum(mask), not length(mask),
                               # so must use mask[mask] <- ... to avoid silent R vector recycling.
@@ -521,15 +516,24 @@ SeqTile <- R6::R6Class("SeqTile",
                                    }
                                  }
                                } else if (has_bounds && self$style == "triangle") {
-                                 # Triangle: no polygon clipping needed.
-                                 # The straddling filter in prep() removes tiles that cross diagonal boundaries,
-                                 # creating clean diagonal edges via tile omission on both left and right sides.
-                                 grid.polygon(
-                                   x          = unit(c(rbind(x0, xc, x1, xc)), "npc"),
-                                   y          = unit(c(rbind(yc, y0, yc, y1)), "npc"),
-                                   id.lengths = rep(4L, length(x0)),
-                                   gp         = gpar(fill = col, col = brd, lwd = lwd)
-                                 )
+                                 # Triangle: tile omission (straddling filter in prep()) handles diagonal
+                                 # left/right edges. Horizontal polygon clipping handles top/bottom edges.
+                                 for (i in seq_along(x0)) {
+                                   diamond_x <- c(x0[i], xc[i], x1[i], xc[i])
+                                   diamond_y <- c(yc[i], y0[i], yc[i], y1[i])
+                                   # Clip at top (y = pb$y1 = yDistMax in NPC)
+                                   clipped <- self$.clip_polygon_horizontal_edge(diamond_x, diamond_y, pb$y1, keep_above = FALSE)
+                                   # Clip at bottom (y = pb$y0 = 0 in NPC)
+                                   if (length(clipped$x) > 0)
+                                     clipped <- self$.clip_polygon_horizontal_edge(clipped$x, clipped$y, pb$y0, keep_above = TRUE)
+                                   if (length(clipped$x) > 0) {
+                                     grid.polygon(
+                                       x  = unit(clipped$x, "npc"),
+                                       y  = unit(clipped$y, "npc"),
+                                       gp = gpar(fill = col[i], col = brd, lwd = lwd)
+                                     )
+                                   }
+                                 }
                                } else {
                                  # No clipping needed: draw all diamonds as-is
                                  grid.polygon(
