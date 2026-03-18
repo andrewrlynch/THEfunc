@@ -167,13 +167,19 @@ SeqTile <- R6::R6Class("SeqTile",
                            self$coordCanvas <- vector("list", length(track_windows))
                            self$panelBounds <- vector("list", length(track_windows))
 
-                           # For rectangle style, expand x-ranges before overlap detection
+                           # For rectangle style, expand x-ranges before overlap detection.
+                           # Tiles at the upper-left corner have x_orig ≈ window_min - yDistMax/2,
+                           # which is OUTSIDE the x-window. Expanding the search range by the
+                           # max visible distance ensures these tiles are loaded so polygon
+                           # clipping in draw() can fill the full upper-left corner.
+                           # Use maxDist if set, else yDistMax, else the largest window width.
                            search_gr <- self$gr
-                           if (self$style == "rectangle" && !is.null(self$gr_y) && !is.null(self$maxDist)) {
-                             expanded_ranges <- ranges(self$gr)
+                           if (self$style == "rectangle" && !is.null(self$gr_y)) {
+                             expand_by <- self$maxDist %||% self$yDistMax %||%
+                                          max(GenomicRanges::width(track_windows))
                              expanded_ranges <- IRanges::IRanges(
-                               start = pmax(start(expanded_ranges) - self$maxDist, 1),
-                               end = end(expanded_ranges) + self$maxDist
+                               start = pmax(start(ranges(self$gr)) - expand_by, 1),
+                               end   = end(ranges(self$gr)) + expand_by
                              )
                              search_gr <- GenomicRanges::GRanges(
                                seqnames = seqnames(self$gr),
